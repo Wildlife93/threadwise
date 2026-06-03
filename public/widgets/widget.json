@@ -1,0 +1,7 @@
+{
+  "name": "Threadwise",
+  "description": "Latest messages",
+  "screenshots": [{ "src": "/screenshots/mobile.png", "sizes": "390x844" }],
+  "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }],
+  "backgrounds": [{ "color": "#0f0f14" }]
+}

@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "app.web.threadwise_8b8f5.twa",
+    "sha256_cert_fingerprints": ["70:1C:17:68:8C:8E:AC:38:50:3A:79:38:8C:03:42:ED:09:05:F7:7B:05:D7:CD:10:9D:5B:83:E7:4B:6E:B9:B2"]
+  }
+}]
