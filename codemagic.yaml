@@ -8,8 +8,10 @@ workflows:
     scripts:
       - name: Install dependencies
         script: npm install
+      - name: Install Capacitor CLI
+        script: npm install @capacitor/cli @capacitor/core @capacitor/android
       - name: Capacitor sync
-        script: npx cap sync android
+        script: ./node_modules/.bin/cap sync android
       - name: Build Android APK
         script: |
           cd android
