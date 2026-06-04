@@ -1,5 +1,8 @@
 {
   "appId": "com.wildlife93.threadwise",
   "appName": "Threadwise",
-  "webDir": "public"
+  "webDir": "public",
+  "server": {
+    "androidScheme": "https"
+  }
 }
