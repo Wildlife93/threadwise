@@ -80,3 +80,12 @@ android {
         }
     }
 }
+
+android {
+    signingConfigs {
+        debug {
+            v1SigningEnabled true
+            v2SigningEnabled true
+        }
+    }
+}
