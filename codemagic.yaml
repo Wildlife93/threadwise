@@ -12,6 +12,32 @@ workflows:
         script: npm install @capacitor/cli @capacitor/core @capacitor/android
       - name: Capacitor sync
         script: ./node_modules/.bin/cap sync android
+      - name: Fix build.gradle
+        script: |
+          cd android
+          # Remove all appended android blocks, keep only the original
+          head -n $(grep -n "^android {" app/build.gradle | head -1 | cut -d: -f1) app/build.gradle | head -n -1 > app/build.gradle.tmp
+          cat >> app/build.gradle.tmp << 'GRADLE'
+          android {
+              defaultConfig {}
+              signingConfigs {
+                  debug {
+                      storeFile file("debug.keystore")
+                      storePassword "android"
+                      keyAlias "androiddebugkey"
+                      keyPassword "android"
+                      v1SigningEnabled true
+                      v2SigningEnabled true
+                  }
+              }
+              buildTypes {
+                  debug {
+                      signingConfig signingConfigs.debug
+                  }
+              }
+          }
+          GRADLE
+          mv app/build.gradle.tmp app/build.gradle
       - name: Build Android APK
         script: |
           cd android
