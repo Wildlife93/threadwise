@@ -4,6 +4,6 @@
   "webDir": "public",
   "server": {
     "androidScheme": "https",
-    "hostname": "threadwise-8b8f5.firebaseapp.com"
+    "url": "https://localhost/threadwise.html"
   }
 }
