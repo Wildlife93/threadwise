@@ -3,6 +3,6 @@
   "appName": "Threadwise",
   "webDir": "public",
   "server": {
-    "androidScheme": "https"
+    "androidScheme": "http"
   }
 }
