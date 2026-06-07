@@ -3,6 +3,7 @@
   "appName": "Threadwise",
   "webDir": "public",
   "server": {
-    "androidScheme": "http"
+    "androidScheme": "https",
+    "hostname": "threadwise-8b8f5.firebaseapp.com"
   }
 }
