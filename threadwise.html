@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1"/>
   <meta name="theme-color" content="#1a1a2e"/>
   <title>Threadwise</title>
+  <script src="https://unpkg.com/dexie@3/dist/dexie.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Playfair+Display:ital@0;1&display=swap" rel="stylesheet"/>
@@ -712,6 +713,11 @@
 
 <!-- Firebase SDK -->
 <script type="module">
+const twDb = new Dexie("threadwise");
+twDb.version(1).stores({ conversations: "id,updatedAt", messages: "id,convoId,createdAt" });
+async function saveConvosToDexie(c) { try { await twDb.conversations.bulkPut(c); } catch(e) {} }
+async function loadConvosFromDexie() { try { const x = await twDb.conversations.orderBy("updatedAt").reverse().toArray(); if (x.length) { conversations = x; render(); } } catch(e) {} }
+
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js';
 import {
   getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
@@ -724,16 +730,24 @@ import {
 } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js';
 
 // ── PASTE YOUR FIREBASE CONFIG HERE ──────────────────────────────────────
+const twDb = new Dexie("threadwise");
+twDb.version(1).stores({ conversations: "id,updatedAt", messages: "id,convoId,createdAt" });
+async function saveConvosToDexie(x) { try { await twDb.conversations.bulkPut(x); } catch(e) {} }
+async function loadConvosFromDexie() { try { const x = await twDb.conversations.orderBy("updatedAt").reverse().toArray(); if (x.length) { conversations = x; render(); } } catch(e) {} }
 const FIREBASE_CONFIG = {
-  apiKey: "",
-  authDomain: "",
-  projectId: "",
-  storageBucket: "",
-  messagingSenderId: "",
-  appId: ""
+  apiKey: "AIzaSyCNyyoZmmXv3JYF7bFRmouj9MewSxjT24Y",
+  authDomain: "threadwise-8b8f5.firebaseapp.com",
+  projectId: "threadwise-8b8f5",
+  storageBucket: "threadwise-8b8f5.firebasestorage.app",
+  messagingSenderId: "865341567672",
+  appId: "1:865341567672:web:03374e4331de7b46c57a4d"
 };
 // ─────────────────────────────────────────────────────────────────────────
 
+const twDb = new Dexie("threadwise");
+twDb.version(1).stores({ conversations: "id,updatedAt", messages: "id,convoId,createdAt" });
+async function saveConvosToDexie(x) { try { await twDb.conversations.bulkPut(x); } catch(e) {} }
+async function loadConvosFromDexie() { try { const x = await twDb.conversations.orderBy("updatedAt").reverse().toArray(); if (x.length) { conversations = x; render(); } } catch(e) {} }
 const CONFIG_FILLED = FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.projectId;
 
 // ── State ────────────────────────────────────────────────────────────────
@@ -1555,7 +1569,7 @@ if (!CONFIG_FILLED) {
       } else {
         await updateDoc(doc(db, 'users', user.uid), { online: true, lastSeen: serverTimestamp() });
       }
-      subscribeConversations();
+      loadConvosFromDexie(); authLoading = false; render(); subscribeConversations();
     } else {
       currentUser = null;
       if (unsubConvos) { unsubConvos(); unsubConvos = null; }
@@ -1565,6 +1579,122 @@ if (!CONFIG_FILLED) {
     }
   });
 }
+</script>
+</body>
+</html>
+
+<!-- ── SMS Fallback Module ──────────────────────────────────────────────── -->
+<script>
+(function() {
+  const SMS = {
+    isNative() { return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()); },
+    async send(numbers, text) {
+      const phoneNumber = numbers[0] || '';
+      if (!phoneNumber) throw new Error('No phone number');
+      if (this.isNative()) {
+        try {
+          const plugin = window.Capacitor.Plugins.SmsPlugin;
+          if (!plugin) throw new Error('SmsPlugin not registered');
+          return await plugin.send({ phoneNumber, message: text });
+        } catch(e) { console.error('[SMS]', e.message); throw e; }
+      } else {
+        console.log('[SMS] Dev mode — would send to', phoneNumber, ':', text);
+        return { success: true, dev: true };
+      }
+    }
+  };
+  function getStoredPhone(uid) { return localStorage.getItem('tw_phone_' + uid) || ''; }
+  function storePhone(uid, phone) { localStorage.setItem('tw_phone_' + uid, phone.trim()); }
+  window.TW_SMS = {
+    isNative: () => SMS.isNative(),
+    getContactPhone() {
+      if (!window.activeConvoId || !window.conversations || !window.currentUser) return '';
+      const convo = window.conversations.find(c => c.id === window.activeConvoId);
+      if (!convo || convo.isSelf) return '';
+      const otherUid = convo.participants.find(uid => uid !== window.currentUser.uid);
+      if (!otherUid) return '';
+      return (convo.otherProfile || {}).phoneNumber || getStoredPhone(otherUid);
+    },
+    async saveContactPhone(uid, phone) {
+      storePhone(uid, phone);
+      if (window.activeConvoId && window.db) {
+        try {
+          const { updateDoc, doc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+          await updateDoc(doc(window.db, 'conversations', window.activeConvoId), { [`contactPhones.${uid}`]: phone });
+        } catch(e) {}
+      }
+    },
+    async sendSMS(text, manualOverride = false) {
+      const phone = this.getContactPhone();
+      if (!phone) { showSMSPhonePrompt(text, manualOverride); return; }
+      try {
+        await SMS.send([phone], text);
+        if (window.showToast) showToast('📱 Sent via SMS');
+      } catch(e) {
+        if (window.showToast) showToast('SMS failed: ' + (e.message || 'unknown'));
+      }
+    }
+  };
+  function showSMSPhonePrompt(pendingText, manualOverride) {
+    document.getElementById('tw-sms-sheet')?.remove();
+    document.querySelector('.tw-sms-overlay')?.remove();
+    const convo = window.conversations?.find(c => c.id === window.activeConvoId);
+    const otherUid = convo?.participants?.find(uid => uid !== window.currentUser?.uid) || '';
+    const otherName = convo?.otherProfile?.displayName || 'this contact';
+    const ov = document.createElement('div');
+    ov.className = 'tw-sms-overlay';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9980;';
+    document.body.appendChild(ov);
+    const sheet = document.createElement('div');
+    sheet.id = 'tw-sms-sheet';
+    sheet.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#17171f;border-radius:20px 20px 0 0;padding:20px 18px 36px;z-index:9981;font-family:"DM Sans",sans-serif;color:#e8e8f0;';
+    sheet.innerHTML = `
+      <div style="width:36px;height:4px;background:#2a2a38;border-radius:2px;margin:0 auto 18px;"></div>
+      <div style="font-size:17px;font-weight:600;margin-bottom:6px;">📱 SMS phone number</div>
+      <div style="font-size:13px;color:#9090a8;margin-bottom:18px;">Enter mobile number for <strong style="color:#e8e8f0;">${otherName}</strong></div>
+      <input id="tw-sms-phone-input" type="tel" placeholder="+44 7911 123456"
+        style="width:100%;background:#1e1e28;border:1.5px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:#e8e8f0;font-size:15px;outline:none;box-sizing:border-box;margin-bottom:14px;"
+        value="${window.TW_SMS.getContactPhone() || ''}"/>
+      <div style="display:flex;gap:10px;">
+        <button id="tw-sms-cancel" style="flex:1;padding:14px;border-radius:12px;border:none;background:#1e1e28;color:#e8e8f0;font-size:14px;cursor:pointer;">Cancel</button>
+        <button id="tw-sms-save-send" style="flex:2;padding:14px;border-radius:12px;border:none;background:#4caf82;color:#fff;font-size:15px;font-weight:600;cursor:pointer;">Save &amp; Send SMS</button>
+      </div>`;
+    document.body.appendChild(sheet);
+    const phoneInput = sheet.querySelector('#tw-sms-phone-input');
+    phoneInput.focus();
+    const close = () => { sheet.remove(); ov.remove(); };
+    ov.onclick = close;
+    sheet.querySelector('#tw-sms-cancel').onclick = close;
+    sheet.querySelector('#tw-sms-save-send').onclick = async () => {
+      const phone = phoneInput.value.trim();
+      if (!phone) { phoneInput.style.border = '1.5px solid #f07070'; return; }
+      await window.TW_SMS.saveContactPhone(otherUid, phone);
+      close();
+      await window.TW_SMS.sendSMS(pendingText, manualOverride);
+    };
+  }
+  let _patched = false;
+  function patchSendMessage() {
+    if (_patched || !window.sendMessage) return;
+    _patched = true;
+    const _orig = window.sendMessage;
+    window.sendMessage = async function() {
+      const wasOffline = !navigator.onLine;
+      await _orig.apply(this, arguments);
+      if (wasOffline && window.activeConvoId && window.currentUser) {
+        const convo = window.conversations?.find(c => c.id === window.activeConvoId);
+        if (convo && !convo.isSelf) {
+          const last = window.messages?.[window.messages.length - 1];
+          if (last && last._pending && last.senderId === window.currentUser.uid) {
+            const phone = window.TW_SMS.getContactPhone();
+            if (phone) { try { await SMS.send([phone], last.text); if(window.showToast) showToast('📱 Also sent via SMS (offline)'); } catch(e) {} }
+          }
+        }
+      }
+    };
+  }
+  setTimeout(patchSendMessage, 300);
+})();
 </script>
 </body>
 </html>
