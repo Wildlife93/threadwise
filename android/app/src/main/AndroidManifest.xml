@@ -11,7 +11,7 @@
     5. SEND_RESPOND_VIA_MESSAGE permission
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.threadwise.app">
+   >
 
     <!-- ── Core permissions ─────────────────────────────────────────── -->
     <uses-permission android:name="android.permission.INTERNET" />
