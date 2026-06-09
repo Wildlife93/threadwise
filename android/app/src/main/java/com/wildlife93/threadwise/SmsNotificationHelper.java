@@ -1,6 +1,7 @@
-package com.threadwise.app;
+package com.wildlife93.threadwise;
 
 import android.app.Notification;
+import com.wildlife93.threadwise.R;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
