@@ -41,6 +41,7 @@ import org.json.JSONObject;
         @Permission(strings = { Manifest.permission.SEND_SMS },        alias = "sendSms"),
         @Permission(strings = { Manifest.permission.RECEIVE_SMS },     alias = "receiveSms"),
         @Permission(strings = { Manifest.permission.READ_SMS },        alias = "readSms"),
+        @Permission(strings = { Manifest.permission.WRITE_SMS },       alias = "writeSms"),
         @Permission(strings = { Manifest.permission.READ_CONTACTS },   alias = "readContacts"),
     }
 )
