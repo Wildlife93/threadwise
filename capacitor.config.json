@@ -1,8 +1,5 @@
 {
   "appId": "com.wildlife93.threadwise",
   "appName": "Threadwise",
-  "webDir": "public",
-  "server": {
-    "url": "https://threadwise-8b8f5.firebaseapp.com"
-  }
+  "webDir": "public"
 }
