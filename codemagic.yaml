@@ -73,7 +73,6 @@ workflows:
           GRADLE
       - name: Build Android APK
         script: |
-          npx cap sync
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug
