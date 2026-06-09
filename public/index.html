@@ -1068,14 +1068,80 @@ function smsSetPhone(convoId, number) {
   } catch {}
 }
 function isCapacitor() {
-  return !!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Sms);
+  return !!(window.ThreadwiseSms || (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Sms));
 }
 async function smsSend(phoneNumber, message) {
   if (!isCapacitor()) return;
   try {
-    await window.Capacitor.Plugins.Sms.sendSms({ phoneNumber, message });
+    if (window.ThreadwiseSms) {
+      // JavascriptInterface bridge (works with Firebase-hosted WebView)
+      await new Promise((resolve, reject) => {
+        const id = 'sms_' + Date.now();
+        window.__twSmsCallback = (cbId, err, result) => {
+          if (cbId !== id) return;
+          delete window.__twSmsCallback;
+          err ? reject(new Error(err)) : resolve(result);
+        };
+        window.ThreadwiseSms.sendSms(phoneNumber, message, id);
+      });
+    } else {
+      await window.Capacitor.Plugins.Sms.sendSms({ phoneNumber, message });
+    }
   } catch(e) { console.warn('SMS send failed:', e); }
 }
+
+// ── Default SMS app helpers ───────────────────────────────────────────────
+// Cached so we don't poll on every render
+let _smsIsDefault = null;
+
+async function smsCheckDefault() {
+  if (!isCapacitor()) return false;
+  try {
+    if (window.ThreadwiseSms) {
+      _smsIsDefault = window.ThreadwiseSms.isDefault();
+      return _smsIsDefault;
+    }
+    const res = await window.Capacitor.Plugins.Sms.checkDefaultSmsApp();
+    _smsIsDefault = res.isDefault;
+    return res.isDefault;
+  } catch(e) {
+    console.warn('checkDefaultSmsApp failed:', e);
+    return false;
+  }
+}
+
+async function smsRequestDefault() {
+  if (!isCapacitor()) return;
+  try {
+    if (window.ThreadwiseSms) {
+      window.ThreadwiseSms.requestDefault();
+    } else {
+      await window.Capacitor.Plugins.Sms.requestDefaultSmsApp();
+    }
+    // Re-check after user returns from the system dialog
+    setTimeout(async () => {
+      await smsCheckDefault();
+      render();
+    }, 1500);
+  } catch(e) { console.warn('requestDefaultSmsApp failed:', e); }
+}
+
+// Also mark the message as read in the system SMS database
+async function smsMarkThreadRead(phoneNumber) {
+  if (!isCapacitor() || !phoneNumber) return;
+  try {
+    // Find the matching thread from the system SMS DB by address
+    const { conversations: sysCons } = await window.Capacitor.Plugins.Sms.getConversations();
+    const thread = sysCons?.find(t =>
+      t.address && phoneNumber &&
+      t.address.replace(/\D/g,'').endsWith(phoneNumber.replace(/\D/g,'').slice(-7))
+    );
+    if (thread?.threadId) {
+      await window.Capacitor.Plugins.Sms.markRead({ threadId: thread.threadId });
+    }
+  } catch(e) { console.warn('smsMarkThreadRead failed:', e); }
+}
+
 // Listen for incoming SMS from SmsReceiver.java via notifyListeners
 if (window.Capacitor) {
   window.Capacitor.addListener?.('Sms', 'smsReceived', handleIncomingSms);
@@ -1371,10 +1437,16 @@ function renderApp() {
 }
 
 function renderProfileMenu() {
+  const isApk = isCapacitor();
+  const isDefault = _smsIsDefault === true;
   return `<div class="profile-menu" id="profile-menu">
     <div class="profile-menu-item" id="pm-profile">👤 My profile &amp; ID</div>
     <div class="profile-menu-item" id="pm-sensory">🧠 Sensory profile</div>
     <div class="profile-menu-item" id="pm-notif">${localStorage.getItem('tw_notif')==='enabled' ? '🔕 Turn off notifications' : '🔔 Turn on notifications'}</div>
+    ${isDefault
+      ? `<div class="profile-menu-item" style="color:var(--green);cursor:default;">📱 Default SMS app ✓</div>`
+      : `<div class="profile-menu-item" id="pm-sms-default" style="color:${isApk ? 'var(--accent)' : 'var(--text3)'};${isApk ? '' : 'cursor:default;'}">📱 Set as default SMS app${isApk ? '' : ' (install APK)'}</div>`
+    }
     <div class="menu-divider"></div>
     <div class="profile-menu-item danger" id="pm-signout">🚪 Sign out</div>
   </div>`;
@@ -1705,6 +1777,15 @@ function bindAppEvents() {
     profileMenuOpen = false;
     await setPresence(false);
     await signOut(auth);
+  });
+  document.getElementById('pm-sms-default')?.addEventListener('click', () => {
+    profileMenuOpen = false;
+    render();
+    if (isCapacitor()) {
+      smsRequestDefault();
+    } else {
+      showToast('Install the Threadwise APK to set as default SMS app');
+    }
   });
 
   // Close profile menu on click outside
@@ -2145,6 +2226,11 @@ async function markRead(convoId) {
     }
     await batch.commit();
   } catch(e) {}
+  // Also mark the linked system SMS thread as read (if default SMS app)
+  const linkedPhone = smsGetPhone(convoId);
+  if (linkedPhone && _smsIsDefault) {
+    smsMarkThreadRead(linkedPhone);
+  }
 }
 
 // Rate limit state
@@ -4149,6 +4235,7 @@ if (!CONFIG_FILLED) {
       if (!notifPref || notifPref === 'later') {
         setTimeout(() => askNotificationPermission(), 3000);
       }
+      if (isCapacitor()) { smsCheckDefault().then(() => render()); }
     } else {
       // Auth returned null — check if we have a cached user for offline mode
       const cachedUser = (() => { try { return JSON.parse(localStorage.getItem('tw_user')); } catch { return null; } })();

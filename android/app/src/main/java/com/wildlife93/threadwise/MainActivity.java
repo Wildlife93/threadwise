@@ -1,4 +1,4 @@
-package com.wildlife93.threadwise;
+package com.threadwise.app;
 
 import com.getcapacitor.BridgeActivity;
 
