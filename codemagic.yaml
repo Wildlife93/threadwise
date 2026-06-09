@@ -13,8 +13,7 @@ workflows:
         script: npx cap sync android
       - name: Fix build.gradle
         script: |
-            npx cap sync
-      cd android
+          cd android
           cat > app/build.gradle << 'GRADLE'
           apply plugin: 'com.android.application'
 
@@ -49,12 +48,6 @@ workflows:
               }
           }
 
-          repositories {
-              flatDir {
-                  dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
-              }
-          }
-
           dependencies {
               implementation fileTree(include: ['*.jar'], dir: 'libs')
               implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
@@ -80,8 +73,8 @@ workflows:
           GRADLE
       - name: Build Android APK
         script: |
-            npx cap sync
-      cd android
+          npx cap sync
+          cd android
           chmod +x gradlew
           ./gradlew assembleDebug
     artifacts:
