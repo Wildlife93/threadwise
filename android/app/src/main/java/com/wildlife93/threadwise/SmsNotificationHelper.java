@@ -42,7 +42,7 @@ public class SmsNotificationHelper {
         }
 
         // ── Tap intent: open MainActivity ─────────────────────────────────────
-        Intent openApp = new Intent(context, MainActivity.class);
+        Intent openApp = new Intent(context, com.wildlife93.threadwise.MainActivity.class);
         openApp.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent pi = PendingIntent.getActivity(
                 context, 0, openApp,
