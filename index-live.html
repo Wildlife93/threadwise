@@ -1057,59 +1057,6 @@ let toast = null;
 let toastTimer = null;
 let conversationsLoaded = false;
 
-// ── SMS bridge ────────────────────────────────────────────────────────────
-function smsGetPhone(convoId) {
-  try { return localStorage.getItem('tw_sms_' + convoId) || ''; } catch { return ''; }
-}
-function smsSetPhone(convoId, number) {
-  try {
-    if (number) localStorage.setItem('tw_sms_' + convoId, number);
-    else localStorage.removeItem('tw_sms_' + convoId);
-  } catch {}
-}
-function isCapacitor() {
-  return !!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Sms);
-}
-async function smsSend(phoneNumber, message) {
-  if (!isCapacitor()) return;
-  try {
-    await window.Capacitor.Plugins.Sms.sendSms({ phoneNumber, message });
-  } catch(e) { console.warn('SMS send failed:', e); }
-}
-// Listen for incoming SMS from SmsReceiver.java via notifyListeners
-if (window.Capacitor) {
-  window.Capacitor.addListener?.('Sms', 'smsReceived', handleIncomingSms);
-}
-// Also listen via window event (fallback bridge method)
-window.addEventListener('smsReceived', (e) => {
-  try {
-    const data = typeof e.detail === 'string' ? JSON.parse(e.detail) : e.detail;
-    handleIncomingSms(data);
-  } catch(e) { console.warn('smsReceived parse error', e); }
-});
-function handleIncomingSms(data) {
-  const sender = data.sender || '';
-  const body = data.body || '';
-  if (!sender || !body || !currentUser || !db) return;
-  const convoId = conversations.find(c => {
-    const p = smsGetPhone(c.id);
-    return p && sender.replace(/\D/g,'').endsWith(p.replace(/\D/g,'').slice(-7));
-  })?.id;
-  if (!convoId) return;
-  addDoc(collection(db, 'conversations', convoId, 'messages'), {
-    text: body,
-    senderId: 'sms:' + sender,
-    senderName: sender,
-    createdAt: serverTimestamp(),
-    read: false,
-    viaSms: true
-  }).catch(() => {});
-  updateDoc(doc(db, 'conversations', convoId), {
-    lastMessage: body.length > 100 ? body.slice(0, 100) + '…' : body,
-    lastMessageAt: serverTimestamp()
-  }).catch(() => {});
-}
-
 // ── Init Firebase ─────────────────────────────────────────────────────────
 function initFirebase() {
   try {
@@ -1479,7 +1426,6 @@ function renderChatView() {
       </div>
       <div class="topbar-actions">
         ${!isSelf ? `<button class="icon-btn" title="Copy their User ID" id="copy-uid-btn">🔗</button>` : ''}
-        ${!isSelf && isCapacitor() ? `<button class="icon-btn" title="Link SMS number" id="sms-link-btn" style="${smsGetPhone(activeConvoId)?'color:#7c6af7;':''}">📱</button>` : ''}
       </div>
     </div>
 
@@ -1629,45 +1575,6 @@ function renderProfileModal() {
 }
 
 // ── Bind events ───────────────────────────────────────────────────────────
-function openSmsLinkPanel() {
-  document.getElementById('tw-sms-panel')?.remove();
-  document.querySelector('.tw-sms-overlay')?.remove();
-  const current = smsGetPhone(activeConvoId);
-  const ov = document.createElement('div');
-  ov.className = 'tw-sms-overlay';
-  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9990;';
-  document.body.appendChild(ov);
-  const panel = document.createElement('div');
-  panel.id = 'tw-sms-panel';
-  panel.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#17171f;border-radius:20px 20px 0 0;padding:20px 18px 36px;z-index:9991;font-family:"DM Sans",sans-serif;color:#e8e8f0;';
-  panel.innerHTML = `
-    <div style="width:36px;height:4px;background:#2a2a38;border-radius:2px;margin:0 auto 18px;"></div>
-    <div style="font-size:17px;font-weight:600;margin-bottom:6px;">📱 Link SMS number</div>
-    <div style="font-size:13px;color:#5a5a72;margin-bottom:18px;">Messages you send will also be mirrored as SMS. Incoming SMS from this number will appear in this conversation.</div>
-    <div style="font-size:11px;color:#5a5a72;font-weight:600;letter-spacing:0.05em;margin-bottom:6px;">PHONE NUMBER</div>
-    <input id="tw-sms-number" type="tel" placeholder="+44 7700 900000" value="${current}"
-      style="width:100%;background:#1e1e28;border:1.5px solid rgba(255,255,255,0.07);border-radius:12px;padding:12px 14px;color:#e8e8f0;font-size:15px;outline:none;box-sizing:border-box;margin-bottom:18px;" />
-    <div style="display:flex;gap:10px;">
-      <button id="tw-sms-cancel" style="flex:1;padding:14px;border-radius:12px;border:none;background:#1e1e28;color:#e8e8f0;font-family:inherit;font-size:14px;cursor:pointer;">Cancel</button>
-      ${current ? `<button id="tw-sms-clear" style="flex:1;padding:14px;border-radius:12px;border:none;background:#2a2a38;color:#ff6b6b;font-family:inherit;font-size:14px;cursor:pointer;">Remove</button>` : ''}
-      <button id="tw-sms-save" style="flex:2;padding:14px;border-radius:12px;border:none;background:#7c6af7;color:#fff;font-family:inherit;font-size:15px;font-weight:600;cursor:pointer;">Save</button>
-    </div>
-  `;
-  document.body.appendChild(panel);
-  const close = () => { panel.remove(); ov.remove(); };
-  ov.onclick = close;
-  document.getElementById('tw-sms-cancel').onclick = close;
-  document.getElementById('tw-sms-clear')?.addEventListener('click', () => {
-    smsSetPhone(activeConvoId, ''); close(); showToast('SMS number removed'); render();
-  });
-  document.getElementById('tw-sms-save').onclick = () => {
-    const num = document.getElementById('tw-sms-number').value.trim();
-    if (!num) { showToast('Enter a phone number'); return; }
-    smsSetPhone(activeConvoId, num); close(); showToast('📱 SMS linked'); render();
-  };
-  document.getElementById('tw-sms-number')?.focus();
-}
-
 function bindAppEvents() {
   // Profile menu
   const profileBtn = document.getElementById('profile-btn');
@@ -1753,10 +1660,6 @@ function bindAppEvents() {
     if (!convo) return;
     const other = getOtherParticipant(convo);
     copyToClipboard(other.uid, 'Their UID copied!');
-  });
-
-  document.getElementById('sms-link-btn')?.addEventListener('click', () => {
-    openSmsLinkPanel();
   });
 
   // Message input
@@ -1964,33 +1867,18 @@ async function openConvo(convoId) {
   profileMenuOpen = false;
   sessionSave();
 
-  // Load cached messages immediately — works offline and shows instantly online
-  try {
-    const raw = localStorage.getItem('tw_msgs_' + convoId);
-    if (raw) {
-      messages = JSON.parse(raw).map(m => ({
-        ...m,
-        createdAt: m.createdAt ? { toMillis: () => m.createdAt, toDate: () => new Date(m.createdAt) } : null
-      }));
-    } else {
-      messages = [];
-    }
-  } catch(e) { messages = []; }
+  // Clear unread
+  const convo = conversations.find(c => c.id === convoId);
+  if (convo && convo.unreadCounts?.[currentUser.uid] > 0) {
+    try {
+      await updateDoc(doc(db, 'conversations', convoId), {
+        [`unreadCounts.${currentUser.uid}`]: 0
+      });
+    } catch(e) {}
+  }
 
   render();
-
-  // Only do network ops when online
-  if (navigator.onLine) {
-    const convo = conversations.find(c => c.id === convoId);
-    if (convo && convo.unreadCounts?.[currentUser.uid] > 0) {
-      try {
-        await updateDoc(doc(db, 'conversations', convoId), {
-          [`unreadCounts.${currentUser.uid}`]: 0
-        });
-      } catch(e) {}
-    }
-    subscribeMessages(convoId);
-  }
+  subscribeMessages(convoId);
 }
 
 function filterConversations(q) {
@@ -2310,8 +2198,6 @@ async function sendMessage() {
       lastMessageAt: serverTimestamp(),
       ...(otherUid ? { [`unreadCounts.${otherUid}`]: increment(1) } : {})
     });
-    const linkedPhone = smsGetPhone(activeConvoId);
-    if (linkedPhone && isCapacitor()) smsSend(linkedPhone, text);
   } catch(e) {
     // Firestore write failed even though navigator.onLine was true —
     // queue it so it isn't lost

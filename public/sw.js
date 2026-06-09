@@ -1,5 +1,5 @@
 // Threadwise Service Worker
-const CACHE_VERSION = 'tw-v9';
+const CACHE_VERSION = 'tw-v14';
 const SHELL_CACHE   = `${CACHE_VERSION}-shell`;
 const DATA_CACHE    = `${CACHE_VERSION}-data`;
 

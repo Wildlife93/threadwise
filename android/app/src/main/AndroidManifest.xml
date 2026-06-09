@@ -1,43 +1,130 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<!--
+  Threadwise – AndroidManifest.xml
+  Configured for Default SMS App candidacy (Android 4.4 / API 19+).
 
-        <uses-permission android:name="android.permission.SEND_SMS"/>
+  To be the default SMS app, Android requires ALL of the following:
+    1. SMS_DELIVER broadcast receiver  (not SMS_RECEIVED)
+    2. WAP_PUSH_DELIVER broadcast receiver
+    3. A respond-via-message service (HeadlessSmsSendService)
+    4. Intent filters on the launcher activity for SENDTO / VIEW sms: / smsto: URIs
+    5. SEND_RESPOND_VIA_MESSAGE permission
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.threadwise.app">
 
-<application
+    <!-- ── Core permissions ─────────────────────────────────────────── -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- ── SMS permissions ──────────────────────────────────────────── -->
+    <uses-permission android:name="android.permission.SEND_SMS" />
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <uses-permission android:name="android.permission.READ_SMS" />
+    <uses-permission android:name="android.permission.WRITE_SMS" />
+    <uses-permission android:name="android.permission.RECEIVE_MMS" />
+    <uses-permission android:name="android.permission.RECEIVE_WAP_PUSH" />
+    <!-- Required for respond-via-message service -->
+    <uses-permission android:name="android.permission.SEND_RESPOND_VIA_MESSAGE" />
+    <!-- Read contacts to display names -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- Post-Android-13 notification permission -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Vibration for incoming SMS alerts -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/AppTheme">
+        android:theme="@style/AppTheme"
+        android:usesCleartextTraffic="false">
 
+        <!-- ══════════════════════════════════════════════════════════
+             MAIN ACTIVITY
+             Must declare SMS intent filters to appear in the
+             "Choose default SMS app" system dialog.
+        ══════════════════════════════════════════════════════════ -->
         <activity
-            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
             android:name=".MainActivity"
-            android:label="@string/title_activity_main"
-            android:theme="@style/AppTheme.NoActionBarLaunch"
+            android:exported="true"
             android:launchMode="singleTask"
-            android:exported="true">
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
+            android:windowSoftInputMode="adjustResize">
 
+            <!-- Standard launcher -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- ── SMS compose / view intent filters ────────────────
+                 Required so the OS can route "New message" taps and
+                 deep-links to this activity when it is default SMS app.
+            ─────────────────────────────────────────────────────── -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.SENDTO" />
+                <data android:scheme="sms" />
+                <data android:scheme="smsto" />
+                <data android:scheme="mms" />
+                <data android:scheme="mmsto" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+            </intent-filter>
+
         </activity>
 
-        <provider
-            android:name="androidx.core.content.FileProvider"
-            android:authorities="${applicationId}.fileprovider"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/file_paths"></meta-data>
-        </provider>
+        <!-- ══════════════════════════════════════════════════════════
+             SMS_DELIVER BROADCAST RECEIVER
+             Android delivers SMS_DELIVER ONLY to the default SMS app.
+             (SMS_RECEIVED goes to all apps; SMS_DELIVER is exclusive.)
+        ══════════════════════════════════════════════════════════ -->
+        <receiver
+            android:name=".SmsReceiver"
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_SMS">
+            <intent-filter android:priority="999">
+                <action android:name="android.provider.Telephony.SMS_DELIVER" />
+            </intent-filter>
+        </receiver>
+
+        <!-- ══════════════════════════════════════════════════════════
+             WAP PUSH RECEIVER  (required by the default-SMS checklist)
+             Handles MMS notifications delivered via WAP Push.
+        ══════════════════════════════════════════════════════════ -->
+        <receiver
+            android:name=".MmsReceiver"
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_WAP_PUSH">
+            <intent-filter android:priority="999">
+                <action android:name="android.provider.Telephony.WAP_PUSH_DELIVER" />
+                <data android:mimeType="application/vnd.wap.mms-message" />
+            </intent-filter>
+        </receiver>
+
+        <!-- ══════════════════════════════════════════════════════════
+             RESPOND-VIA-MESSAGE SERVICE
+             Required component; lets the OS offer "Reply" from
+             incoming-call / lock-screen without opening the full app.
+             Permission prevents other apps from binding to it.
+        ══════════════════════════════════════════════════════════ -->
+        <service
+            android:name=".RespondViaMessageService"
+            android:exported="true"
+            android:permission="android.permission.SEND_RESPOND_VIA_MESSAGE">
+            <intent-filter>
+                <action android:name="android.intent.action.RESPOND_VIA_MESSAGE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="sms" />
+                <data android:scheme="smsto" />
+                <data android:scheme="mms" />
+                <data android:scheme="mmsto" />
+            </intent-filter>
+        </service>
+
     </application>
 
-    <!-- Permissions -->
-
-    <uses-permission android:name="android.permission.INTERNET" />
 </manifest>

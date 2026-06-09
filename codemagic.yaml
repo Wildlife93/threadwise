@@ -13,7 +13,8 @@ workflows:
         script: npx cap sync android
       - name: Fix build.gradle
         script: |
-          cd android
+            npx cap sync
+      cd android
           cat > app/build.gradle << 'GRADLE'
           apply plugin: 'com.android.application'
 
@@ -79,7 +80,8 @@ workflows:
           GRADLE
       - name: Build Android APK
         script: |
-          cd android
+            npx cap sync
+      cd android
           chmod +x gradlew
           ./gradlew assembleDebug
     artifacts:
