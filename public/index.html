@@ -915,7 +915,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js';
 import {
   getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
-  onAuthStateChanged, signOut, updateProfile, sendEmailVerification
+  onAuthStateChanged, signOut, updateProfile, sendEmailVerification, signInWithCustomToken
 } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js';
 import {
   getFirestore, doc, setDoc, getDoc, collection, query, where,
@@ -1315,17 +1315,15 @@ function renderAuth() {
 
     try {
       if (authTab === 'login') {
-        // Use REST API to bypass capacitor://localhost referer block
-        const _signInRes = await fetch(
+        // REST API sign-in bypasses capacitor://localhost referer block
+        const _r = await fetch(
           `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE_CONFIG.apiKey}`,
           { method: 'POST', headers: {'Content-Type':'application/json'},
             body: JSON.stringify({email, password: pass, returnSecureToken: true}) }
         );
-        const _signInData = await _signInRes.json();
-        if (_signInData.error) throw new Error(_signInData.error.message);
-        const { EmailAuthProvider, signInWithCredential } = await import('https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js');
-        const _cred = EmailAuthProvider.credential(email, pass);
-        await signInWithCredential(auth, _cred);
+        const _d = await _r.json();
+        if (_d.error) throw new Error(_d.error.message);
+        await signInWithCustomToken(auth, _d.idToken);
       } else {
         if (!name) {
           authError = 'Enter a display name.';
