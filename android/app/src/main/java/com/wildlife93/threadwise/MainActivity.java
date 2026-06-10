@@ -1,6 +1,7 @@
-package com.threadwise.app;
+package com.wildlife93.threadwise;
 
 import com.getcapacitor.BridgeActivity;
+import com.wildlife93.threadwise.SmsPlugin;
 
 /**
  * MainActivity
