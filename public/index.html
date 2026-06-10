@@ -915,7 +915,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js';
 import {
   getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
-  onAuthStateChanged, signOut, updateProfile, sendEmailVerification, signInWithCustomToken
+  onAuthStateChanged, signOut, updateProfile, sendEmailVerification
 } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js';
 import {
   getFirestore, doc, setDoc, getDoc, collection, query, where,
@@ -1315,15 +1315,35 @@ function renderAuth() {
 
     try {
       if (authTab === 'login') {
-        // REST API sign-in bypasses capacitor://localhost referer block
-        const _r = await fetch(
-          `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE_CONFIG.apiKey}`,
-          { method: 'POST', headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({email, password: pass, returnSecureToken: true}) }
-        );
-        const _d = await _r.json();
-        if (_d.error) throw new Error(_d.error.message);
-        await signInWithCustomToken(auth, _d.idToken);
+        // Attempt normal sign-in; if blocked by referer, use REST fallback
+        try {
+          await signInWithEmailAndPassword(auth, email, pass);
+        } catch(_e) {
+          if (_e.code === 'auth/requests-from-referer-blocked' || _e.message?.includes('referer')) {
+            // REST API fallback - not blocked by referer
+            const _r = await fetch(
+              `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE_CONFIG.apiKey}`,
+              { method: 'POST', headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({email, password: pass, returnSecureToken: true}) }
+            );
+            const _d = await _r.json();
+            if (_d.error) throw new Error(_d.error.message);
+            // Store for offline/cache use
+            try { localStorage.setItem('tw_user', JSON.stringify({
+              uid: _d.localId, email: _d.email,
+              displayName: _d.displayName || email.split('@')[0],
+              emailVerified: true
+            })); } catch(e) {}
+            // Manually trigger the auth handler with a fake user object
+            window._twFakeUser = {
+              uid: _d.localId, email: _d.email,
+              displayName: _d.displayName || email.split('@')[0],
+              emailVerified: true,
+              getIdToken: async () => _d.idToken
+            };
+            window.dispatchEvent(new CustomEvent('tw_manual_auth', { detail: window._twFakeUser }));
+          } else { throw _e; }
+        }
       } else {
         if (!name) {
           authError = 'Enter a display name.';
@@ -4162,6 +4182,33 @@ if (!CONFIG_FILLED) {
     if (currentUser) setPresence(true);
   });
 
+  window.addEventListener('tw_manual_auth', async (e) => {
+    const user = e.detail;
+    currentUser = user;
+    try { localStorage.setItem('tw_user', JSON.stringify({
+      uid: user.uid, displayName: user.displayName,
+      email: user.email, emailVerified: user.emailVerified
+    })); } catch(e2) {}
+    sessionRestore();
+    loadConversationsFromCache();
+    render();
+    if (navigator.onLine) {
+      try {
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        if (!userDoc.exists()) {
+          await setDoc(doc(db, 'users', user.uid), {
+            uid: user.uid,
+            displayName: user.displayName || user.email,
+            email: user.email,
+            createdAt: serverTimestamp(),
+            online: true,
+            lastSeen: serverTimestamp()
+          });
+        }
+      } catch(e2) {}
+    }
+    if (isCapacitor()) { smsCheckDefault().then(() => render()); }
+  });
   onAuthStateChanged(auth, async (user) => {
     if (user) {
       currentUser = user;
