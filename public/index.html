@@ -1068,25 +1068,12 @@ function smsSetPhone(convoId, number) {
   } catch {}
 }
 function isCapacitor() {
-  return !!(window.ThreadwiseSms || (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Sms));
+  return !!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Sms);
 }
 async function smsSend(phoneNumber, message) {
   if (!isCapacitor()) return;
   try {
-    if (window.ThreadwiseSms) {
-      // JavascriptInterface bridge (works with Firebase-hosted WebView)
-      await new Promise((resolve, reject) => {
-        const id = 'sms_' + Date.now();
-        window.__twSmsCallback = (cbId, err, result) => {
-          if (cbId !== id) return;
-          delete window.__twSmsCallback;
-          err ? reject(new Error(err)) : resolve(result);
-        };
-        window.ThreadwiseSms.sendSms(phoneNumber, message, id);
-      });
-    } else {
-      await window.Capacitor.Plugins.Sms.sendSms({ phoneNumber, message });
-    }
+    await window.Capacitor.Plugins.Sms.sendSms({ phoneNumber, message });
   } catch(e) { console.warn('SMS send failed:', e); }
 }
 
@@ -1097,10 +1084,6 @@ let _smsIsDefault = null;
 async function smsCheckDefault() {
   if (!isCapacitor()) return false;
   try {
-    if (window.ThreadwiseSms) {
-      _smsIsDefault = window.ThreadwiseSms.isDefault();
-      return _smsIsDefault;
-    }
     const res = await window.Capacitor.Plugins.Sms.checkDefaultSmsApp();
     _smsIsDefault = res.isDefault;
     return res.isDefault;
@@ -1113,11 +1096,7 @@ async function smsCheckDefault() {
 async function smsRequestDefault() {
   if (!isCapacitor()) return;
   try {
-    if (window.ThreadwiseSms) {
-      window.ThreadwiseSms.requestDefault();
-    } else {
-      await window.Capacitor.Plugins.Sms.requestDefaultSmsApp();
-    }
+    await window.Capacitor.Plugins.Sms.requestDefaultSmsApp();
     // Re-check after user returns from the system dialog
     setTimeout(async () => {
       await smsCheckDefault();
@@ -1179,7 +1158,11 @@ function handleIncomingSms(data) {
 // ── Init Firebase ─────────────────────────────────────────────────────────
 function initFirebase() {
   try {
-    app = initializeApp(FIREBASE_CONFIG);
+    const _cfg = Object.assign({}, FIREBASE_CONFIG);
+    // Capacitor serves from capacitor://localhost – Firebase auth blocks localhost referers.
+    // Pointing authDomain at the firebaseapp.com domain fixes the referer check.
+    _cfg.authDomain = 'threadwise-8b8f5.firebaseapp.com';
+    app = initializeApp(_cfg);
     auth = getAuth(app);
     db = getFirestore(app);
 
