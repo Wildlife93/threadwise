@@ -75,7 +75,13 @@
                 <category android:name="android.intent.category.BROWSABLE" />
             </intent-filter>
 
-        </activity>
+                <intent-filter>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="threadwise" />
+        </intent-filter>
+    </activity>
 
         <!-- ══════════════════════════════════════════════════════════
              SMS_DELIVER BROADCAST RECEIVER
