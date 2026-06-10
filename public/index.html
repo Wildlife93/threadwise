@@ -1071,10 +1071,24 @@ function isCapacitor() {
   return !!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Sms);
 }
 async function smsSend(phoneNumber, message) {
-  if (!isCapacitor()) return;
-  try {
-    await window.Capacitor.Plugins.Sms.sendSms({ phoneNumber, message });
-  } catch(e) { console.warn('SMS send failed:', e); }
+  if (isCapacitor()) {
+    try {
+      await window.Capacitor.Plugins.Sms.sendSms({ phoneNumber, message });
+    } catch(e) { console.warn('SMS send failed:', e); }
+  } else {
+    // Open Threadwise app via custom scheme; falls back to sms: if not installed
+    const encoded = encodeURIComponent(message);
+    const threadwiseUrl = `threadwise://sms?to=${encodeURIComponent(phoneNumber)}&body=${encoded}`;
+    const smsUrl = `sms:${phoneNumber}?body=${encoded}`;
+    const a = document.createElement('a');
+    a.href = threadwiseUrl;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    // Fallback to sms: after short delay if app not installed
+    setTimeout(() => { window.location.href = smsUrl; }, 1500);
+    document.body.removeChild(a);
+  }
 }
 
 // ── Default SMS app helpers ───────────────────────────────────────────────
@@ -2378,7 +2392,7 @@ async function sendMessage() {
       ...(otherUid ? { [`unreadCounts.${otherUid}`]: increment(1) } : {})
     });
     const linkedPhone = smsGetPhone(activeConvoId);
-    if (linkedPhone && isCapacitor()) smsSend(linkedPhone, text);
+    if (linkedPhone) smsSend(linkedPhone, text);
   } catch(e) {
     // Firestore write failed even though navigator.onLine was true —
     // queue it so it isn't lost
