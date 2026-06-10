@@ -1159,8 +1159,6 @@ function handleIncomingSms(data) {
 function initFirebase() {
   try {
     const _cfg = Object.assign({}, FIREBASE_CONFIG);
-    // Capacitor serves from capacitor://localhost – Firebase auth blocks localhost referers.
-    // Pointing authDomain at the firebaseapp.com domain fixes the referer check.
     _cfg.authDomain = 'threadwise-8b8f5.firebaseapp.com';
     app = initializeApp(_cfg);
     auth = getAuth(app);
@@ -1420,7 +1418,7 @@ function renderApp() {
 }
 
 function renderProfileMenu() {
-  const isApk = isCapacitor();
+  const isApk = true;
   const isDefault = _smsIsDefault === true;
   return `<div class="profile-menu" id="profile-menu">
     <div class="profile-menu-item" id="pm-profile">👤 My profile &amp; ID</div>
@@ -1534,7 +1532,7 @@ function renderChatView() {
       </div>
       <div class="topbar-actions">
         ${!isSelf ? `<button class="icon-btn" title="Copy their User ID" id="copy-uid-btn">🔗</button>` : ''}
-        ${!isSelf && isCapacitor() ? `<button class="icon-btn" title="Link SMS number" id="sms-link-btn" style="${smsGetPhone(activeConvoId)?'color:#7c6af7;':''}">📱</button>` : ''}
+        ${!isSelf ? `<button class="icon-btn" title="Link SMS number" id="sms-link-btn" style="${smsGetPhone(activeConvoId)?'color:#7c6af7;':''}">📱</button>` : ''}
       </div>
     </div>
 
