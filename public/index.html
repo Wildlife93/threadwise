@@ -915,8 +915,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js';
 import {
   getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
-  onAuthStateChanged, signOut, updateProfile, sendEmailVerification,
-  EmailAuthProvider, signInWithCredential
+  onAuthStateChanged, signOut, updateProfile, sendEmailVerification
 } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js';
 import {
   getFirestore, doc, setDoc, getDoc, collection, query, where,
@@ -1173,8 +1172,6 @@ function initFirebase() {
     _cfg.authDomain = 'threadwise-8b8f5.firebaseapp.com';
     app = initializeApp(_cfg);
     auth = getAuth(app);
-    // Tell Firebase auth to use the project domain, bypassing Capacitor localhost referer block
-    auth.tenantId = null;
     db = getFirestore(app);
 
     // Enable offline persistence
@@ -1318,6 +1315,15 @@ function renderAuth() {
 
     try {
       if (authTab === 'login') {
+        // Use REST API to bypass capacitor://localhost referer block
+        const _signInRes = await fetch(
+          `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE_CONFIG.apiKey}`,
+          { method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({email, password: pass, returnSecureToken: true}) }
+        );
+        const _signInData = await _signInRes.json();
+        if (_signInData.error) throw new Error(_signInData.error.message);
+        const { EmailAuthProvider, signInWithCredential } = await import('https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js');
         const _cred = EmailAuthProvider.credential(email, pass);
         await signInWithCredential(auth, _cred);
       } else {
