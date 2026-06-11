@@ -914,14 +914,15 @@
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js';
 import {
-  getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
+  getAuth, initializeAuth, indexedDBLocalPersistence,
+  createUserWithEmailAndPassword, signInWithEmailAndPassword,
   onAuthStateChanged, signOut, updateProfile, sendEmailVerification
 } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js';
 import {
-  getFirestore, doc, setDoc, getDoc, collection, query, where,
+  getFirestore, initializeFirestore, persistentLocalCache,
+  doc, setDoc, getDoc, collection, query, where,
   orderBy, onSnapshot, addDoc, updateDoc, serverTimestamp,
-  getDocs, limit, startAfter, writeBatch, increment,
-  enableIndexedDbPersistence
+  getDocs, limit, startAfter, writeBatch, increment
 } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js';
 import { getMessaging, getToken, onMessage } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-messaging.js';
 
@@ -1171,11 +1172,12 @@ function initFirebase() {
     const _cfg = Object.assign({}, FIREBASE_CONFIG);
     _cfg.authDomain = 'threadwise-8b8f5.firebaseapp.com';
     app = initializeApp(_cfg);
-    auth = getAuth(app);
-    db = getFirestore(app);
-
-    // Enable offline persistence
-    enableIndexedDbPersistence(db).catch(() => {});
+    auth = initializeAuth(app, {
+      persistence: indexedDBLocalPersistence
+    });
+    db = initializeFirestore(app, {
+      localCache: persistentLocalCache()
+    });
 
     // Auto re-subscribe when coming back online
     window.addEventListener('online', () => {
@@ -1374,7 +1376,7 @@ function renderAuth() {
       // Stop spinner after a successful auth action.
       authLoading = false;
     } catch(e) {
-      authError = firebaseErrMsg(e.code);
+      authError = firebaseErrMsg(e.code) || (e.message && e.message !== 'undefined' ? e.message : null) || 'Sign in failed. Please try again.';
       authLoading = false;
       render();
     }
@@ -1396,7 +1398,8 @@ function firebaseErrMsg(code) {
     'auth/too-many-requests': 'Too many attempts. Please try again later.',
     'auth/invalid-credential': 'Invalid email or password.',
   };
-  return map[code] || `Error: ${code}`;
+  if (!code) return null;
+  return map[code] || null;
 }
 
 // ── App ───────────────────────────────────────────────────────────────────
