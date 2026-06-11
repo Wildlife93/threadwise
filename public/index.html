@@ -919,7 +919,7 @@ import {
   onAuthStateChanged, signOut, updateProfile, sendEmailVerification
 } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js';
 import {
-  getFirestore, initializeFirestore, persistentLocalCache,
+  getFirestore, initializeFirestore, persistentLocalCache, persistentSingleTabManager,
   doc, setDoc, getDoc, collection, query, where,
   orderBy, onSnapshot, addDoc, updateDoc, serverTimestamp,
   getDocs, limit, startAfter, writeBatch, increment
@@ -1176,7 +1176,7 @@ function initFirebase() {
       persistence: indexedDBLocalPersistence
     });
     db = initializeFirestore(app, {
-      localCache: persistentLocalCache()
+      localCache: persistentLocalCache({ tabManager: persistentSingleTabManager() })
     });
 
     // Auto re-subscribe when coming back online
@@ -2168,10 +2168,10 @@ function subscribeMessages(convoId) {
     limit(80)
   );
   unsubMessages = onSnapshot(q,
-    { includeMetadataChanges: false },
+    { includeMetadataChanges: true },
     (snap) => {
       messages = snap.docs
-        .map(d => ({ id: d.id, ...d.data() }))
+        .map(d => ({ id: d.id, ...d.data(), _pending: d.metadata.hasPendingWrites }))
         .filter(m => {
           if (m.deletedForEveryone) {
             if (m.replacementNote && m.replacementNoteAt) {
@@ -2421,6 +2421,7 @@ async function sendMessage() {
     const linkedPhone = smsGetPhone(activeConvoId);
     if (linkedPhone) smsSend(linkedPhone, text);
   } catch(e) {
+    console.log('SEND ERROR:', JSON.stringify({code: e.code, message: e.message, name: e.name}));
     // Firestore write failed even though navigator.onLine was true —
     // queue it so it isn't lost
     const qid = Date.now() + '_' + Math.random().toString(36).slice(2);
