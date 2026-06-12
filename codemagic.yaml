@@ -11,6 +11,8 @@ workflows:
         script: npm install -g @capacitor/cli
       - name: Capacitor sync
         script: npx cap sync android
+      - name: Remove capacitor.build.gradle
+        script: rm -f android/app/capacitor.build.gradle
       - name: Fix build.gradle
         script: |
           cd android
