@@ -51,7 +51,7 @@ public class SmsNotificationHelper {
         String text  = (body   != null && !body.isEmpty())   ? body   : "";
 
         Notification notification = new NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(R.mipmap.ic_launcher)          // use your launcher icon
+                .setSmallIcon(android.R.mipmap.sym_def_app_icon)          // use your launcher icon
                 .setContentTitle(title)
                 .setContentText(text)
                 .setStyle(new NotificationCompat.BigTextStyle().bigText(text))
