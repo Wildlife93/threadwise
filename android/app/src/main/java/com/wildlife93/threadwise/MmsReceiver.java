@@ -1,4 +1,4 @@
-package com.threadwise.app;
+package com.wildlife93.threadwise;
 
 import android.content.BroadcastReceiver;
 import android.content.Context;
