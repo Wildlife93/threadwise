@@ -1,4 +1,4 @@
-package com.threadwise.app;
+package com.wildlife93.threadwise;
 
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -51,7 +51,7 @@ public class SmsNotificationHelper {
         String text  = (body   != null && !body.isEmpty())   ? body   : "";
 
         Notification notification = new NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(R.mipmap.ic_launcher)          // use your launcher icon
+                .setSmallIcon(android.R.drawable.ic_dialog_info)          // use your launcher icon
                 .setContentTitle(title)
                 .setContentText(text)
                 .setStyle(new NotificationCompat.BigTextStyle().bigText(text))
