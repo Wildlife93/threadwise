@@ -1,0 +1,4160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no"/>
+  <meta name="theme-color" content="#0f0f14" media="(prefers-color-scheme: dark)"/>
+  <meta name="theme-color" content="#0f0f14" media="(prefers-color-scheme: light)"/>
+
+  <!-- PWA / installable app -->
+  <link rel="manifest" href="manifest.json"/>
+
+  <!-- iOS standalone app -->
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="Threadwise"/>
+  <link rel="apple-touch-icon" href="/icons/icon-192.png"/>
+  <link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152.png"/>
+  <link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192.png"/>
+  <link rel="apple-touch-startup-image" href="/icons/icon-512.png"/>
+
+  <!-- Android / Chrome -->
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="application-name" content="Threadwise"/>
+
+  <!-- Prevent phone number detection & tap highlights -->
+  <meta name="format-detection" content="telephone=no"/>
+
+  <!-- Favicon fallback -->
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png"/>
+  <link rel="shortcut icon" href="/icons/icon-192.png"/>
+
+  <title>Threadwise</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Playfair+Display:ital@0;1&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f0f14;
+      --surface: #17171f;
+      --surface2: #1e1e28;
+      --surface3: #252532;
+      --border: rgba(255,255,255,0.07);
+      --border2: rgba(255,255,255,0.12);
+      --accent: #7c6af7;
+      --accent2: #a594f9;
+      --accent-dim: rgba(124,106,247,0.15);
+      --accent-glow: rgba(124,106,247,0.35);
+      --text: #e8e8f0;
+      --text2: #9090a8;
+      --text3: #5a5a72;
+      --green: #4caf82;
+      --green-dim: rgba(76,175,130,0.15);
+      --red: #f07070;
+      --msg-out: #2a2540;
+      --msg-out-border: rgba(124,106,247,0.25);
+      --msg-in: #1e1e28;
+      --radius: 18px;
+      --radius-sm: 10px;
+      --font: 'DM Sans', sans-serif;
+      --font-display: 'Playfair Display', serif;
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-top: env(safe-area-inset-top, 0px);
+    }
+
+    html, body { height: 100%; overflow: hidden; background: var(--bg); }
+
+    body {
+      font-family: var(--font);
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+      line-height: 1.5;
+      /* Native app feel */
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+      overscroll-behavior: none;
+      touch-action: pan-y;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    /* Re-enable text selection in message bubbles and inputs */
+    .msg-bubble, input, textarea, [contenteditable] {
+      user-select: text;
+      -webkit-user-select: text;
+    }
+
+    #root { height: 100%; display: flex; flex-direction: column; }
+
+    /* ── Scrollbars ── */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 2px; }
+
+    /* ── Layout ── */
+    .app { display: flex; height: 100vh; height: 100dvh; padding-top: var(--safe-top); }
+
+    /* Prevent rubber-band scroll on iOS at the root level */
+    #root { overscroll-behavior: none; }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: 320px; min-width: 320px;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex; flex-direction: column;
+      transition: transform 0.3s cubic-bezier(.4,0,.2,1);
+    }
+
+    .sidebar-header {
+      padding: 20px 20px 0;
+      display: flex; align-items: center; gap: 12px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 16px;
+    }
+
+    .logo {
+      font-family: var(--font-display);
+      font-style: italic;
+      font-size: 22px;
+      color: var(--accent2);
+      letter-spacing: -0.5px;
+      flex: 1;
+    }
+
+    .avatar-btn {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      background: var(--accent-dim);
+      border: 1.5px solid var(--accent);
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      font-size: 14px; font-weight: 600; color: var(--accent2);
+      transition: background 0.2s;
+      position: relative;
+    }
+    .avatar-btn:hover { background: var(--accent-glow); }
+
+    .status-dot {
+      position: absolute; bottom: 0; right: 0;
+      width: 9px; height: 9px;
+      border-radius: 50%;
+      background: var(--green);
+      border: 2px solid var(--surface);
+    }
+
+    .search-wrap {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .search-input {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 9px 14px 9px 36px;
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 13.5px;
+      outline: none;
+      transition: border-color 0.2s;
+      position: relative;
+    }
+    .search-input:focus { border-color: var(--accent); }
+    .search-input::placeholder { color: var(--text3); }
+
+    .search-wrap-inner {
+      position: relative;
+    }
+    .search-icon {
+      position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
+      color: var(--text3); font-size: 14px; pointer-events: none;
+    }
+
+    .chat-list { flex: 1; overflow-y: auto; }
+
+    .chat-list-section {
+      padding: 8px 0;
+    }
+
+    .section-label {
+      padding: 6px 18px;
+      font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text3);
+    }
+
+    .chat-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 16px;
+      cursor: pointer;
+      border-left: 3px solid transparent;
+      transition: background 0.15s, border-color 0.15s;
+      position: relative;
+    }
+    .chat-item:hover { background: var(--surface2); }
+    .chat-item.active {
+      background: var(--accent-dim);
+      border-left-color: var(--accent);
+    }
+
+    .chat-avatar {
+      width: 42px; height: 42px; min-width: 42px;
+      border-radius: 50%;
+      background: var(--surface3);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px; font-weight: 600;
+      color: var(--text2);
+      position: relative;
+    }
+
+    .online-dot {
+      position: absolute; bottom: 1px; right: 1px;
+      width: 9px; height: 9px;
+      border-radius: 50%; background: var(--green);
+      border: 2px solid var(--surface);
+    }
+
+    .chat-meta { flex: 1; min-width: 0; }
+    .chat-name {
+      font-size: 14px; font-weight: 500;
+      color: var(--text);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .chat-preview {
+      font-size: 12.5px; color: var(--text3);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      margin-top: 2px;
+    }
+
+    .chat-time-badge { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+    .chat-time { font-size: 11px; color: var(--text3); white-space: nowrap; }
+    .unread-badge {
+      background: var(--accent);
+      color: #fff;
+      font-size: 10px; font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 10px;
+      min-width: 18px; text-align: center;
+    }
+
+    .new-chat-btn {
+      margin: 12px 16px;
+      padding: 10px;
+      background: var(--accent-dim);
+      border: 1px dashed rgba(124,106,247,0.3);
+      border-radius: var(--radius-sm);
+      color: var(--accent2);
+      font-family: var(--font);
+      font-size: 13.5px; font-weight: 500;
+      cursor: pointer;
+      text-align: center;
+      transition: background 0.2s, border-color 0.2s;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .new-chat-btn:hover {
+      background: var(--accent-glow);
+      border-color: var(--accent);
+    }
+
+    /* ── Chat View ── */
+    .chat-view {
+      flex: 1;
+      display: flex; flex-direction: column;
+      background: var(--bg);
+      min-width: 0;
+    }
+
+    .chat-topbar {
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 12px;
+      background: var(--surface);
+      min-height: 65px;
+    }
+
+    .back-btn {
+      display: none;
+      background: none; border: none;
+      color: var(--text2); cursor: pointer;
+      padding: 4px 8px 4px 0;
+      font-size: 18px;
+    }
+
+    .topbar-avatar {
+      width: 38px; height: 38px; min-width: 38px;
+      border-radius: 50%;
+      background: var(--surface3);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 600; color: var(--text2);
+      position: relative;
+    }
+
+    .topbar-info { flex: 1; min-width: 0; }
+    .topbar-name { font-size: 15px; font-weight: 600; color: var(--text); }
+    .topbar-status { font-size: 12px; color: var(--text3); margin-top: 1px; }
+    .topbar-status.online { color: var(--green); }
+
+    .topbar-actions { display: flex; gap: 4px; }
+    .icon-btn {
+      width: 36px; height: 36px;
+      border-radius: 8px;
+      background: none; border: none;
+      color: var(--text2); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px;
+      transition: background 0.15s, color 0.15s;
+    }
+    .icon-btn:hover { background: var(--surface2); color: var(--text); }
+
+    /* ── Messages ── */
+    .messages-area {
+      flex: 1; overflow-y: auto;
+      padding: 16px 20px;
+      display: flex; flex-direction: column;
+      gap: 4px;
+    }
+
+    .date-divider {
+      text-align: center;
+      margin: 12px 0 8px;
+    }
+    .date-divider span {
+      font-size: 11px; font-weight: 500;
+      color: var(--text3);
+      background: var(--surface2);
+      padding: 3px 10px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+    }
+
+    .msg-row {
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+      animation: fadeUp 0.2s ease;
+    }
+    .msg-row.out { flex-direction: row-reverse; }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .msg-avatar-space {
+      width: 28px; min-width: 28px;
+    }
+    .msg-sender-avatar {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      background: var(--surface3);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 600; color: var(--text2);
+    }
+
+    .msg-bubble-wrap { max-width: 68%; display: flex; flex-direction: column; gap: 2px; }
+    .msg-row.out .msg-bubble-wrap { align-items: flex-end; }
+
+    .msg-sender-name {
+      font-size: 11px; color: var(--text3); font-weight: 500;
+      padding: 0 10px;
+      margin-bottom: 2px;
+    }
+
+    .msg-bubble {
+      padding: 9px 13px;
+      border-radius: 16px;
+      font-size: 14px; line-height: 1.55;
+      word-break: break-word;
+      position: relative;
+    }
+
+    .msg-row.in .msg-bubble {
+      background: var(--msg-in);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-bottom-left-radius: 4px;
+    }
+
+    .msg-row.out .msg-bubble {
+      background: var(--msg-out);
+      border: 1px solid var(--msg-out-border);
+      color: var(--text);
+      border-bottom-right-radius: 4px;
+    }
+
+    .msg-bubble.pending {
+      opacity: 0.55;
+      border-style: dashed;
+    }
+
+    .msg-meta {
+      display: flex; align-items: center; gap: 4px;
+      font-size: 10.5px; color: var(--text3);
+      padding: 0 4px;
+    }
+
+    .msg-status { font-size: 12px; }
+    .msg-status.sent { color: var(--text3); }
+    .msg-status.read { color: var(--accent2); }
+
+    .typing-indicator {
+      display: flex; align-items: center; gap: 6px;
+      padding: 8px 0 4px;
+    }
+    .typing-bubble {
+      background: var(--msg-in);
+      border: 1px solid var(--border);
+      border-radius: 16px; border-bottom-left-radius: 4px;
+      padding: 10px 14px;
+      display: flex; gap: 4px; align-items: center;
+    }
+    .typing-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--text3);
+      animation: typingBounce 1.2s infinite;
+    }
+    .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes typingBounce {
+      0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+      30% { transform: translateY(-5px); opacity: 1; }
+    }
+
+    /* ── Input Area ── */
+    .input-area {
+      padding: 12px 12px 12px 12px;
+      /* env(safe-area-inset-bottom) covers the iOS home indicator */
+      padding-bottom: max(12px, calc(10px + env(safe-area-inset-bottom, 0px)));
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+      display: flex; align-items: flex-end; gap: 6px;
+      flex-shrink: 0;
+      overflow: visible;
+      box-sizing: border-box;
+      width: 100%;
+    }
+
+    .input-wrap {
+      flex: 1;
+      min-width: 0;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      display: flex; align-items: flex-end;
+      padding: 0 4px 0 14px;
+      transition: border-color 0.2s;
+      min-height: 44px;
+      overflow: hidden;
+    }
+    .input-wrap:focus-within { border-color: var(--accent); }
+
+    .msg-textarea {
+      flex: 1;
+      background: none; border: none; outline: none;
+      resize: none;
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 14px;
+      line-height: 1.5;
+      padding: 10px 8px 10px 0;
+      max-height: 130px;
+      overflow-y: auto;
+      scrollbar-width: none;
+    }
+    .msg-textarea::-webkit-scrollbar { display: none; }
+    .msg-textarea::placeholder { color: var(--text3); }
+
+    .attach-btn {
+      width: 34px; height: 34px; min-width: 34px;
+      border-radius: 50%;
+      background: none; border: none;
+      color: var(--text3); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px;
+      transition: color 0.15s;
+      margin-bottom: 5px;
+    }
+    .attach-btn:hover { color: var(--text); }
+
+    .send-btn {
+      width: 44px; height: 44px; min-width: 44px;
+      flex-shrink: 0;
+      border-radius: 50%;
+      background: var(--accent);
+      border: none;
+      color: #fff; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 17px;
+      transition: background 0.2s, transform 0.1s;
+      box-shadow: 0 2px 12px var(--accent-glow);
+    }
+    .send-btn:hover { background: var(--accent2); }
+    .send-btn:active { transform: scale(0.93); }
+    .send-btn:disabled { background: var(--surface3); box-shadow: none; cursor: not-allowed; }
+
+    /* ── Empty / Placeholder ── */
+    .chat-empty {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      color: var(--text3); gap: 12px;
+      padding: 40px;
+      text-align: center;
+    }
+    .chat-empty .big-icon { font-size: 52px; opacity: 0.4; }
+    .chat-empty h2 { font-family: var(--font-display); font-style: italic; font-size: 22px; color: var(--text2); }
+    .chat-empty p { font-size: 13px; max-width: 260px; }
+
+    /* ── Modals ── */
+    .overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(6px);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 100;
+      padding: 20px;
+      animation: fadeIn 0.15s ease;
+    }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 20px;
+      padding: 28px;
+      width: 100%; max-width: 380px;
+      animation: slideUp 0.2s cubic-bezier(.4,0,.2,1);
+    }
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .modal h2 {
+      font-family: var(--font-display); font-style: italic;
+      font-size: 22px; color: var(--text);
+      margin-bottom: 6px;
+    }
+    .modal p { font-size: 13px; color: var(--text2); margin-bottom: 20px; }
+    .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
+
+    .field-label {
+      font-size: 12px; font-weight: 500; color: var(--text2);
+      margin-bottom: 6px; display: block;
+      letter-spacing: 0.04em;
+    }
+
+    .field-wrap { margin-bottom: 14px; }
+
+    .field-input {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 10px 13px;
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .field-input:focus { border-color: var(--accent); }
+    .field-input::placeholder { color: var(--text3); }
+
+    .btn {
+      flex: 1;
+      padding: 11px;
+      border-radius: var(--radius-sm);
+      border: none;
+      font-family: var(--font);
+      font-size: 14px; font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s, opacity 0.2s;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      box-shadow: 0 2px 10px var(--accent-glow);
+    }
+    .btn-primary:hover { background: var(--accent2); }
+    .btn-secondary {
+      background: var(--surface2);
+      color: var(--text2);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover { background: var(--surface3); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .error-msg {
+      background: rgba(240,112,112,0.12);
+      border: 1px solid rgba(240,112,112,0.3);
+      border-radius: 8px;
+      padding: 9px 13px;
+      font-size: 13px; color: var(--red);
+      margin-bottom: 14px;
+    }
+
+    .success-msg {
+      background: var(--green-dim);
+      border: 1px solid rgba(76,175,130,0.3);
+      border-radius: 8px;
+      padding: 9px 13px;
+      font-size: 13px; color: var(--green);
+      margin-bottom: 14px;
+    }
+
+    /* ── User ID display ── */
+    .uid-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 10px 13px;
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 14px;
+    }
+    .uid-label { font-size: 11px; color: var(--text3); margin-bottom: 2px; }
+    .uid-value { font-size: 13px; color: var(--accent2); font-weight: 500; font-family: monospace; word-break: break-all; }
+    .copy-btn {
+      background: none; border: none;
+      color: var(--text3); cursor: pointer;
+      padding: 4px; font-size: 14px;
+      border-radius: 4px;
+      transition: color 0.15s;
+      white-space: nowrap;
+    }
+    .copy-btn:hover { color: var(--text); }
+
+    /* ── Profile dropdown ── */
+    .profile-menu {
+      position: absolute;
+      top: calc(100% + 8px); right: 0;
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 14px;
+      padding: 8px;
+      min-width: 200px;
+      z-index: 50;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      animation: slideUp 0.15s ease;
+    }
+    .profile-menu-item {
+      padding: 9px 12px;
+      border-radius: 8px;
+      font-size: 13.5px; color: var(--text2);
+      cursor: pointer;
+      display: flex; align-items: center; gap: 10px;
+      transition: background 0.15s, color 0.15s;
+    }
+    .profile-menu-item:hover { background: var(--surface2); color: var(--text); }
+    .profile-menu-item.danger { color: var(--red); }
+    .profile-menu-item.danger:hover { background: rgba(240,112,112,0.1); }
+    .menu-divider { height: 1px; background: var(--border); margin: 4px 0; }
+
+    /* ── Tabs ── */
+    .auth-tabs {
+      display: flex;
+      background: var(--surface2);
+      border-radius: var(--radius-sm);
+      padding: 3px;
+      margin-bottom: 20px;
+    }
+    .auth-tab {
+      flex: 1; padding: 8px;
+      border-radius: 7px;
+      font-size: 13.5px; font-weight: 500;
+      border: none; background: none;
+      color: var(--text3); cursor: pointer;
+      font-family: var(--font);
+      transition: background 0.15s, color 0.15s;
+    }
+    .auth-tab.active {
+      background: var(--surface);
+      color: var(--text);
+    }
+
+    /* ── Spinner ── */
+    .spinner {
+      width: 18px; height: 18px;
+      border: 2px solid rgba(255,255,255,0.2);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      display: inline-block;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Toast ── */
+    .toast {
+      position: fixed;
+      bottom: calc(80px + var(--safe-bottom));
+      left: 50%; transform: translateX(-50%);
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 10px;
+      padding: 10px 16px;
+      font-size: 13px; color: var(--text);
+      z-index: 200;
+      white-space: nowrap;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+      animation: toastIn 0.2s ease;
+    }
+    @keyframes toastIn {
+      from { opacity: 0; transform: translateX(-50%) translateY(10px); }
+      to { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
+
+    /* ── Mobile ── */
+    @media (max-width: 680px) {
+      .sidebar {
+        position: fixed; inset: 0; right: auto;
+        width: 100%; min-width: unset;
+        z-index: 10;
+        transform: translateX(0);
+      }
+      .sidebar.hidden { transform: translateX(-100%); }
+      /* Use dvh so chat-view shrinks when the soft keyboard appears */
+      .chat-view { position: fixed; inset: 0; height: 100dvh; }
+      .back-btn { display: flex; }
+      .chat-topbar { padding-top: calc(14px + var(--safe-top)); }
+    }
+
+    /* iOS status-bar colour when installed as standalone */
+    @media (display-mode: standalone) {
+      .sidebar-header { padding-top: calc(20px + env(safe-area-inset-top, 0px)); }
+      .chat-topbar    { padding-top: calc(14px + env(safe-area-inset-top, 0px)); }
+    }
+
+    /* ── Scrolled to top indicator ── */
+    .load-more-btn {
+      text-align: center; padding: 8px;
+    }
+    .load-more-btn button {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 20px; color: var(--text2);
+      font-family: var(--font); font-size: 12px;
+      padding: 5px 14px; cursor: pointer;
+      transition: background 0.15s;
+    }
+    .load-more-btn button:hover { background: var(--surface3); }
+
+    /* ── Config screen ── */
+    .config-screen {
+      height: 100vh; height: 100dvh;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--bg);
+      padding: 20px;
+    }
+    .config-card {
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 24px;
+      padding: 36px 32px;
+      width: 100%; max-width: 420px;
+    }
+    .config-card .brand {
+      font-family: var(--font-display);
+      font-style: italic;
+      font-size: 28px; color: var(--accent2);
+      margin-bottom: 6px;
+    }
+    .config-card .brand-sub {
+      font-size: 13px; color: var(--text3);
+      margin-bottom: 24px;
+    }
+
+    /* ── Media attach button ── */
+    .attach-media-btn {
+      width: 40px; height: 40px;
+      min-width: 40px;
+      flex-shrink: 0;
+      border-radius: 50%; border: none;
+      background: var(--surface2);
+      color: var(--text2);
+      font-size: 18px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      transition: background 0.15s;
+    }
+    .attach-media-btn:hover { background: var(--accent-dim); }
+
+    /* ── Media in messages ── */
+    .msg-media-img {
+      max-width: 220px; max-height: 220px;
+      border-radius: 12px; display: block;
+      cursor: pointer; object-fit: cover;
+    }
+    .msg-media-video {
+      max-width: 220px; border-radius: 12px;
+      display: block;
+    }
+
+    @keyframes slideUp {
+      from { transform: translateY(100%); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    /* ── Delete menu ── */
+    .msg-delete-menu {
+      position: fixed;
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 14px;
+      padding: 6px;
+      z-index: 8000;
+      min-width: 200px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      animation: fadeIn 0.12s ease;
+    }
+    .msg-delete-opt {
+      padding: 12px 16px;
+      border-radius: 10px;
+      font-size: 14px;
+      cursor: pointer;
+      color: var(--text);
+      display: flex; align-items: center; gap: 10px;
+      transition: background 0.1s;
+    }
+    .msg-delete-opt:hover { background: var(--surface2); }
+    .msg-delete-opt.danger { color: #ff6b6b; }
+    .msg-delete-overlay {
+      position: fixed; inset: 0; z-index: 7999;
+    }
+
+    .wt-toggle-btn {
+      width: 38px; height: 38px; min-width: 38px;
+      flex-shrink: 0;
+      border-radius: 50%; border: none;
+      background: var(--surface2);
+      color: var(--text2);
+      font-size: 16px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.15s;
+    }
+    .wt-toggle-btn:hover { background: var(--accent-dim); }
+
+    /* ── Icon Panel & Status Icons ── */
+    .msg-status-icons {
+      display: flex; align-items: center; gap: 4px;
+      margin-top: 4px;
+    }
+    .msg-status-chip {
+      font-size: 18px; cursor: pointer;
+      padding: 2px 6px;
+      background: var(--surface2);
+      border-radius: 12px;
+      border: 1px solid var(--border);
+    }
+    .msg-status-add {
+      font-size: 13px; color: var(--text3);
+      background: none; border: 1px dashed var(--border);
+      border-radius: 10px; padding: 2px 8px;
+      cursor: pointer; font-family: var(--font);
+      transition: all 0.15s;
+    }
+    .msg-status-add:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Offline banner ── */
+    .offline-banner {
+      position: fixed; top: 0; left: 0; right: 0;
+      background: #2a1f0a;
+      border-bottom: 1px solid rgba(245,158,11,0.3);
+      padding: 8px 16px;
+      display: flex; align-items: center; gap: 8px;
+      z-index: 7777;
+      font-size: 13px; color: #f59e0b;
+      font-family: var(--font);
+    }
+
+    /* ── Writing tools ── */
+    .wt-btn {
+      background: var(--surface2); border: 1px solid var(--border);
+      color: var(--text2); cursor: pointer;
+      font-size: 11px; padding: 4px 9px;
+      border-radius: 8px; font-family: var(--font);
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+    .wt-btn:hover { background: var(--accent-dim); color: var(--accent2); }
+    .wt-stat {
+      font-size: 11px; color: var(--text3);
+      background: var(--surface2);
+      padding: 3px 8px; border-radius: 6px;
+      white-space: nowrap;
+    }
+
+    /* ── Slow Read Button ── */
+    .read-btn {
+      background: var(--accent-dim);
+      border: 1px solid rgba(124,106,247,0.3);
+      color: var(--accent2);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      padding: 4px 10px;
+      border-radius: 20px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      margin-top: 5px;
+      font-family: var(--font);
+      transition: background 0.15s;
+    }
+    .read-btn:hover { background: var(--accent-glow); }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+
+<!-- Firebase SDK -->
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js';
+import {
+  getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
+  onAuthStateChanged, signOut, updateProfile, sendEmailVerification
+} from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js';
+import {
+  getFirestore, doc, setDoc, getDoc, collection, query, where,
+  orderBy, onSnapshot, addDoc, updateDoc, serverTimestamp,
+  getDocs, limit, startAfter, writeBatch, increment,
+  enableIndexedDbPersistence
+} from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js';
+import { getMessaging, getToken, onMessage } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-messaging.js';
+
+// ── Writing Tools ─────────────────────────────────────────────────────────
+const SECTION_DIVIDER = '\n\n---\n\n';
+let draftSaveTimer = null;
+
+function getDraftKey() { return `tw_draft_${activeConvoId}`; }
+function saveDraft(text) { if (!activeConvoId) return; text.trim() ? localStorage.setItem(getDraftKey(), text) : localStorage.removeItem(getDraftKey()); }
+function loadDraft() { return activeConvoId ? (localStorage.getItem(getDraftKey()) || '') : ''; }
+function clearDraft() { if (activeConvoId) localStorage.removeItem(getDraftKey()); }
+
+function updateWritingStats(text) {
+  if (!document.getElementById('wt-thoughts')) return;
+  const words = twWords(text);
+  const sections = text.split(/\n\n---\n\n/).filter(s => s.trim()).length || (text.trim() ? 1 : 0);
+  document.getElementById('wt-thoughts').textContent = `${sections} section${sections===1?'':'s'}`;
+  document.getElementById('wt-readtime').textContent = `~${twDur(twTime(text, spGetEffectiveWpm()))}`;
+  document.getElementById('wt-words').textContent = `${words} word${words===1?'':'s'}`;
+  const convo = conversations.find(c => c.id === activeConvoId);
+  const otherUid = convo?.participants?.find(u => u !== currentUser?.uid);
+  const nudge = document.getElementById('wt-length-nudge');
+  if (otherUid && nudge && db) {
+    getDoc(doc(db, 'users', otherUid)).then(d => {
+      const comfort = d.data()?.comfortWords || 80;
+      nudge.style.display = words > comfort ? 'inline' : 'none';
+    }).catch(() => {});
+  }
+  const sp = document.getElementById('wt-send-parts');
+  if (sp) sp.style.display = sections > 1 ? 'flex' : 'none';
+}
+
+function bindWritingTools() {
+  const input = document.getElementById('msg-input');
+  const toolsBar = document.getElementById('writing-tools-bar');
+  if (!input) return;
+
+  // Load draft
+  const draft = loadDraft();
+  if (draft) {
+    input.value = draft;
+    document.getElementById('send-btn').disabled = false;
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 160) + 'px';
+  }
+
+  document.getElementById('wt-toggle')?.addEventListener('click', () => {
+    if (!toolsBar) return;
+    const vis = toolsBar.style.display !== 'none';
+    toolsBar.style.display = vis ? 'none' : 'block';
+    if (!vis) updateWritingStats(input.value);
+  });
+
+  document.getElementById('wt-divider')?.addEventListener('click', () => {
+    const pos = input.selectionStart;
+    const val = input.value;
+    input.value = val.slice(0, pos) + SECTION_DIVIDER + val.slice(pos);
+    input.setSelectionRange(pos + SECTION_DIVIDER.length, pos + SECTION_DIVIDER.length);
+    input.focus();
+    updateWritingStats(input.value);
+  });
+
+  document.getElementById('wt-send-parts')?.addEventListener('click', () => sendInParts(input.value));
+
+  input.addEventListener('input', () => {
+    updateWritingStats(input.value);
+    clearTimeout(draftSaveTimer);
+    draftSaveTimer = setTimeout(() => saveDraft(input.value), 800);
+  });
+}
+
+async function sendInParts(text) {
+  const parts = text.split(/\n\n---\n\n/).map(s => s.trim()).filter(Boolean);
+  if (!parts.length) return;
+  const input = document.getElementById('msg-input');
+  if (input) { input.value = ''; input.style.height = 'auto'; }
+  document.getElementById('send-btn').disabled = true;
+  clearDraft();
+  const convo = conversations.find(c => c.id === activeConvoId);
+  const otherUid = convo?.participants?.find(u => u !== currentUser?.uid);
+  for (let i = 0; i < parts.length; i++) {
+    try {
+      await addDoc(collection(db, 'conversations', activeConvoId, 'messages'), {
+        text: parts[i], senderId: currentUser.uid,
+        senderName: currentUser.displayName || currentUser.email,
+        createdAt: serverTimestamp(), read: false,
+        partOf: parts.length, partIndex: i + 1
+      });
+      if (i < parts.length - 1) await new Promise(r => setTimeout(r, 350));
+    } catch(e) { showToast('Failed to send part ' + (i+1)); }
+  }
+  try {
+    await updateDoc(doc(db, 'conversations', activeConvoId), {
+      lastMessage: parts[parts.length-1], lastMessageAt: serverTimestamp(),
+      ...(otherUid ? { [`unreadCounts.${otherUid}`]: increment(parts.length) } : {})
+    });
+  } catch(e) {}
+}
+
+// ── Cloudinary config ─────────────────────────────────────────────────────
+const CLOUDINARY_CLOUD = 'dchhcdxt7';
+const CLOUDINARY_PRESET = 'threadwise';
+
+// ── PASTE YOUR FIREBASE CONFIG HERE ──────────────────────────────────────
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyCNyyoZmmXv3JYF7bFRmouj9MewSxjT24Y",
+  authDomain: "threadwise-8b8f5.firebaseapp.com",
+  projectId: "threadwise-8b8f5",
+  storageBucket: "threadwise-8b8f5.firebasestorage.app",
+  messagingSenderId: "865341567672",
+  appId: "1:865341567672:web:03374e4331de7b46c57a4d"
+};
+// ─────────────────────────────────────────────────────────────────────────
+
+const CONFIG_FILLED = FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.projectId;
+
+// ── State ────────────────────────────────────────────────────────────────
+let app, auth, db;
+let currentUser = null;
+let currentUserProfile = null;
+let conversations = [];
+let activeConvoId = null;
+let messages = [];
+let unsubConvos = null;
+let unsubMessages = null;
+let unsubTyping = null;
+let profileMenuOpen = false;
+let showNewChat = false;
+let showProfile = false;
+let showSensory = false;
+let showMobileChat = false;
+let toast = null;
+let toastTimer = null;
+let conversationsLoaded = false;
+
+// ── Init Firebase ─────────────────────────────────────────────────────────
+function initFirebase() {
+  try {
+    app = initializeApp(FIREBASE_CONFIG);
+    auth = getAuth(app);
+    db = getFirestore(app);
+
+    // Enable offline persistence
+    enableIndexedDbPersistence(db).catch(() => {});
+
+    // Auto re-subscribe when coming back online
+    window.addEventListener('online', () => {
+      updateOnlineIndicator(true);
+      flushOfflineQueue();
+      if (activeConvoId) subscribeMessages(activeConvoId);
+      if (currentUser) subscribeConversations();
+    });
+    window.addEventListener('offline', () => {
+      updateOnlineIndicator(false);
+      registerBackgroundSync(); // register sync so OS wakes app when online
+    });
+
+    // ── Notifications setup ───────────────────────────────────────────────
+    try {
+      const messaging = getMessaging(app);
+      const notifPref = localStorage.getItem('tw_notif');
+      if (notifPref === 'enabled') setupNotifications(messaging);
+    } catch(e) { console.log('Messaging not supported:', e); }
+    return true;
+  } catch(e) {
+    console.error(e);
+    return false;
+  }
+}
+
+// ── Render root ───────────────────────────────────────────────────────────
+const root = document.getElementById('root');
+
+function render() {
+  if (!CONFIG_FILLED) { renderConfigScreen(); return; }
+  if (!currentUser) { renderAuth(); return; }
+  renderApp();
+}
+
+// ── Config screen ─────────────────────────────────────────────────────────
+function renderConfigScreen() {
+  root.innerHTML = `
+    <div class="config-screen">
+      <div class="config-card">
+        <div class="brand">Threadwise</div>
+        <div class="brand-sub">Peer-to-peer messaging, backed by Firebase</div>
+        <div class="error-msg">
+          ⚠️ Firebase config not set.<br><br>
+          Open this file in a text editor and paste your Firebase project config into the <code>FIREBASE_CONFIG</code> object near the top of the script. You can find it in your Firebase console under Project Settings → Your apps.
+        </div>
+        <div style="font-size:12px;color:var(--text3);line-height:1.7;">
+          <strong style="color:var(--text2)">Required Firestore Security Rules:</strong><br>
+          <code style="font-size:11px;color:var(--accent2)">
+            rules_version = '2';<br>
+            service cloud.firestore {<br>
+            &nbsp;match /databases/{database}/documents {<br>
+            &nbsp;&nbsp;match /{document=**} {<br>
+            &nbsp;&nbsp;&nbsp;allow read, write: if request.auth != null;<br>
+            &nbsp;&nbsp;}<br>
+            &nbsp;}<br>
+            }
+          </code>
+        </div>
+      </div>
+    </div>`;
+}
+
+// ── Auth ──────────────────────────────────────────────────────────────────
+let authTab = 'login';
+let authLoading = false;
+let authError = '';
+
+function renderAuth() {
+  const card = document.createElement('div');
+  card.className = 'config-screen';
+  card.innerHTML = `
+    <div class="config-card">
+      <div class="brand">Threadwise</div>
+      <div class="brand-sub">Sign in to start messaging</div>
+      <div class="auth-tabs">
+        <button class="auth-tab ${authTab==='login'?'active':''}" id="tab-login">Sign in</button>
+        <button class="auth-tab ${authTab==='signup'?'active':''}" id="tab-signup">Create account</button>
+      </div>
+      ${authError ? `<div class="error-msg">${authError}</div>` : ''}
+      ${authTab === 'signup' ? `
+        <div class="field-wrap">
+          <label class="field-label">Display name</label>
+          <input class="field-input" id="auth-name" placeholder="How others see you" autocomplete="name"/>
+        </div>
+      ` : ''}
+      <div class="field-wrap">
+        <label class="field-label">Email</label>
+        <input class="field-input" id="auth-email" type="email" placeholder="you@example.com" autocomplete="email"/>
+      </div>
+      <div class="field-wrap">
+        <label class="field-label">Password</label>
+        <input class="field-input" id="auth-pass" type="password" placeholder="••••••••" autocomplete="${authTab==='login'?'current-password':'new-password'}"/>
+      </div>
+      <div class="modal-actions" style="margin-top:6px;">
+        <button class="btn btn-primary" id="auth-submit" ${authLoading?'disabled':''}>
+          ${authLoading ? '<span class="spinner"></span>' : (authTab==='login'?'Sign in':'Create account')}
+        </button>
+      </div>
+    </div>`;
+
+  root.innerHTML = '';
+  root.appendChild(card);
+
+  card.querySelector('#tab-login').onclick = () => { authTab='login'; authError=''; render(); };
+  card.querySelector('#tab-signup').onclick = () => { authTab='signup'; authError=''; render(); };
+
+  const emailEl = card.querySelector('#auth-email');
+  const passEl = card.querySelector('#auth-pass');
+
+  card.querySelector('#auth-submit').onclick = async () => {
+    const email = emailEl.value.trim().toLowerCase();
+    const pass = passEl.value; // never trim passwords — spaces are valid
+    const name = card.querySelector('#auth-name')?.value.trim();
+
+    if (!email || !pass) {
+      authError = 'Please fill in all fields.';
+      render();
+      return;
+    }
+
+    if (authTab === 'signup' && pass.length < 8) {
+      authError = 'Password must be at least 8 characters.';
+      render();
+      return;
+    }
+
+    if (authTab === 'signup' && name && name.length > 50) {
+      authError = 'Display name too long — max 50 characters.';
+      render();
+      return;
+    }
+
+    authLoading = true;
+    authError = '';
+    render();
+
+    try {
+      if (authTab === 'login') {
+        await signInWithEmailAndPassword(auth, email, pass);
+      } else {
+        if (!name) {
+          authError = 'Enter a display name.';
+          authLoading = false;
+          render();
+          return;
+        }
+
+        const safeName = name.replace(/[<>]/g, '').trim().slice(0, 50);
+        const cred = await createUserWithEmailAndPassword(auth, email, pass);
+        await updateProfile(cred.user, { displayName: safeName });
+        await setDoc(doc(db, 'users', cred.user.uid), {
+          uid: cred.user.uid,
+          displayName: safeName,
+          email,
+          createdAt: serverTimestamp(),
+          online: true,
+          lastSeen: serverTimestamp()
+        });
+        // Send verification email with continueUrl so link works
+        try {
+          await sendEmailVerification(cred.user, {
+            url: 'https://threadwise-8b8f5.web.app'
+          });
+        } catch(e) { /* non-critical */ }
+      }
+
+      // Stop spinner after a successful auth action.
+      authLoading = false;
+    } catch(e) {
+      authError = firebaseErrMsg(e.code);
+      authLoading = false;
+      render();
+    }
+  };
+
+  // Enter key
+  [emailEl, passEl].forEach(el => el && el.addEventListener('keydown', e => {
+    if (e.key === 'Enter') card.querySelector('#auth-submit').click();
+  }));
+}
+
+function firebaseErrMsg(code) {
+  const map = {
+    'auth/user-not-found': 'No account found with that email.',
+    'auth/wrong-password': 'Incorrect password.',
+    'auth/email-already-in-use': 'Email already registered.',
+    'auth/weak-password': 'Password must be at least 6 characters.',
+    'auth/invalid-email': 'Invalid email address.',
+    'auth/too-many-requests': 'Too many attempts. Please try again later.',
+    'auth/invalid-credential': 'Invalid email or password.',
+  };
+  return map[code] || `Error: ${code}`;
+}
+
+// ── App ───────────────────────────────────────────────────────────────────
+function renderApp() {
+  root.innerHTML = `
+    <div class="app">
+      <div class="sidebar ${showMobileChat ? 'hidden' : ''}" id="sidebar">
+        <div class="sidebar-header">
+          <div class="logo">Threadwise</div>
+          <div style="position:relative;">
+            <button class="avatar-btn" id="profile-btn">
+              ${initials(currentUser.displayName || currentUser.email)}
+              <div class="status-dot"></div>
+            </button>
+            ${profileMenuOpen ? renderProfileMenu() : ''}
+          </div>
+        </div>
+
+        <div class="search-wrap">
+          <div class="search-wrap-inner">
+            <span class="search-icon">🔍</span>
+            <input class="search-input" id="search-input" placeholder="Search conversations…"/>
+          </div>
+        </div>
+
+        <div class="chat-list" id="chat-list">
+          ${renderSelfThread()}
+          ${!conversationsLoaded ? `
+            <div style="text-align:center;padding:40px 20px;color:var(--text3);font-size:13px;">
+              <div style="font-size:24px;margin-bottom:10px;">⏳</div>
+              Loading conversations…
+            </div>
+          ` : conversations.filter(c => !c.isSelf).length === 0 ? `
+            <div style="text-align:center;padding:40px 20px;color:var(--text3);font-size:13px;">
+              No conversations yet.<br>Start one below!
+            </div>
+          ` : conversations.filter(c => !c.isSelf).map(c => renderConvoItem(c)).join('')}
+        </div>
+
+        <button class="new-chat-btn" id="new-chat-btn">
+          ✏️ New conversation
+        </button>
+      </div>
+
+      <div class="chat-view" id="chat-view">
+        ${activeConvoId ? renderChatView() : renderChatEmpty()}
+      </div>
+    </div>
+
+    ${showNewChat ? renderNewChatModal() : ''}
+    ${showProfile ? renderProfileModal() : ''}
+    ${showSensory ? renderSensoryModal() : ''}
+    ${toast ? `<div class="toast">${toast}</div>` : ''}
+  `;
+
+  bindAppEvents();
+}
+
+function renderProfileMenu() {
+  return `<div class="profile-menu" id="profile-menu">
+    <div class="profile-menu-item" id="pm-profile">👤 My profile &amp; ID</div>
+    <div class="profile-menu-item" id="pm-sensory">🧠 Sensory profile</div>
+    <div class="profile-menu-item" id="pm-notif">${localStorage.getItem('tw_notif')==='enabled' ? '🔕 Turn off notifications' : '🔔 Turn on notifications'}</div>
+    <div class="menu-divider"></div>
+    <div class="profile-menu-item danger" id="pm-signout">🚪 Sign out</div>
+  </div>`;
+}
+
+function renderSelfThread() {
+  const selfConvo = conversations.find(c => c.isSelf);
+  const isActive = selfConvo && selfConvo.id === activeConvoId;
+  const preview = selfConvo?.lastMessage ? truncate(selfConvo.lastMessage, 38) : 'Your private notes…';
+  const time = selfConvo?.lastMessageAt ? formatTime(selfConvo.lastMessageAt.toDate?.() || new Date(selfConvo.lastMessageAt)) : '';
+  const myName = currentUser?.displayName || currentUser?.email || 'You';
+
+  return `
+    <div class="chat-item ${isActive?'active':''}" id="self-thread-btn" style="border-bottom:1px solid var(--border2);">
+      <div class="chat-avatar" style="background:linear-gradient(135deg,#7c6af7,#a78bfa);color:#fff;position:relative;">
+        ${initials(myName)}
+        <div style="position:absolute;bottom:-2px;right:-2px;width:14px;height:14px;background:#7c6af7;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:8px;border:2px solid var(--surface);">📝</div>
+      </div>
+      <div class="chat-meta">
+        <div class="chat-name">${esc(myName)} <span style="font-size:11px;color:var(--text3);font-weight:400;">(You)</span></div>
+        <div class="chat-preview">${esc(preview)}</div>
+      </div>
+      <div class="chat-time-badge">
+        <div class="chat-time">${time}</div>
+      </div>
+    </div>`;
+}
+
+async function openSelfThread() {
+  // Check if self convo already exists
+  let selfConvo = conversations.find(c => c.isSelf);
+
+  if (!selfConvo) {
+    // Create it
+    try {
+      const convoRef = await addDoc(collection(db, 'conversations'), {
+        participants: [currentUser.uid],
+        isSelf: true,
+        participantNames: { [currentUser.uid]: currentUser.displayName || currentUser.email },
+        createdAt: serverTimestamp(),
+        lastMessageAt: serverTimestamp(),
+        lastMessage: '',
+        unreadCounts: { [currentUser.uid]: 0 }
+      });
+      await openConvo(convoRef.id);
+    } catch(e) {
+      showToast('Could not open notes: ' + e.message);
+    }
+  } else {
+    await openConvo(selfConvo.id);
+  }
+}
+
+function renderConvoItem(c) {
+  const other = getOtherParticipant(c);
+  const isActive = c.id === activeConvoId;
+  const preview = c.lastMessage ? truncate(c.lastMessage, 38) : 'Start the conversation…';
+  const time = c.lastMessageAt ? formatTime(c.lastMessageAt.toDate?.() || new Date(c.lastMessageAt)) : '';
+  const unread = c.unreadCounts?.[currentUser.uid] || 0;
+  return `
+    <div class="chat-item ${isActive?'active':''}" data-convo="${c.id}">
+      <div class="chat-avatar" style="${avatarColor(other.name)}">
+        ${initials(other.name)}
+        ${other.online ? '<div class="online-dot"></div>' : ''}
+      </div>
+      <div class="chat-meta">
+        <div class="chat-name">${esc(other.name)}</div>
+        <div class="chat-preview">${esc(preview)}</div>
+      </div>
+      <div class="chat-time-badge">
+        <div class="chat-time">${time}</div>
+        ${unread > 0 ? `<div class="unread-badge">${unread}</div>` : ''}
+      </div>
+    </div>`;
+}
+
+function renderChatEmpty() {
+  return `<div class="chat-empty">
+    <div class="big-icon">💬</div>
+    <h2>Pick a thread</h2>
+    <p>Select a conversation from the sidebar or start a new one to begin messaging.</p>
+  </div>`;
+}
+
+function renderChatView() {
+  const convo = conversations.find(c => c.id === activeConvoId);
+  if (!convo) return renderChatEmpty();
+
+  const isSelf = convo.isSelf;
+  const myName = currentUser?.displayName || currentUser?.email || 'You';
+  const other = isSelf ? { name: myName, online: true } : getOtherParticipant(convo);
+
+  return `
+    <div class="chat-topbar">
+      <button class="back-btn" id="back-btn">←</button>
+      <div class="topbar-avatar" style="${isSelf ? 'background:linear-gradient(135deg,#7c6af7,#a78bfa);color:#fff;' : avatarColor(other.name)}">${initials(other.name)}</div>
+      <div class="topbar-info">
+        <div class="topbar-name">${esc(other.name)}${isSelf ? ' <span style="font-size:11px;color:var(--text3);font-weight:400;">(You)</span>' : ''}</div>
+        <div class="topbar-status${isSelf ? '' : (other.online?' online':'')}">
+          ${isSelf ? '📝 Your private notes' : (other.online ? '● Online' : (other.lastSeen ? 'Last seen ' + formatTime(other.lastSeen.toDate?.() || new Date(other.lastSeen)) : 'Offline'))}
+        </div>
+      </div>
+      <div class="topbar-actions">
+        ${!isSelf ? `<button class="icon-btn" title="Copy their User ID" id="copy-uid-btn">🔗</button>` : ''}
+      </div>
+    </div>
+
+    <div class="messages-area" id="messages-area">
+      ${renderMessages()}
+    </div>
+
+    <div id="writing-tools-bar" style="display:none;background:var(--surface);border-top:1px solid var(--border);padding:8px 12px;">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <button class="wt-btn" id="wt-divider" title="Add section break">⬛ Section break</button>
+        <span class="wt-stat" id="wt-thoughts">0 sections</span>
+        <span class="wt-stat" id="wt-readtime">~0s</span>
+        <span class="wt-stat" id="wt-words">0 words</span>
+        <span id="wt-length-nudge" style="font-size:11px;color:#f59e0b;display:none;">📏 Getting long for them</span>
+      </div>
+    </div>
+    <div class="input-area">
+      <input type="file" id="media-input" accept="image/*,video/*" style="display:none;" />
+      <button class="attach-media-btn" id="attach-media-btn" title="Send photo or video">📎</button>
+      <button class="attach-media-btn" id="icon-panel-btn" title="Feelings & icons" style="font-size:20px;">🙂</button>
+      <div class="input-wrap">
+        <textarea class="msg-textarea" id="msg-input" placeholder="${isSelf ? 'Write a note to yourself…' : 'Message…'}" rows="1"></textarea>
+      </div>
+      <button class="wt-toggle-btn" id="wt-toggle" title="Writing tools">🛠</button>
+      <button class="wt-toggle-btn" id="wt-send-parts" title="Send in parts" style="display:none;">📤</button>
+      <button class="send-btn" id="send-btn" disabled>➤</button>
+    </div>`;
+}
+
+function renderMessages() {
+  if (messages.length === 0) {
+    return `<div style="text-align:center;color:var(--text3);font-size:13px;padding:20px;">Send the first message!</div>`;
+  }
+
+  let html = '';
+  let lastDate = '';
+
+  messages.forEach((msg, i) => {
+    const isOut = msg.senderId === currentUser.uid;
+    const ts = msg.createdAt?.toDate?.() || new Date(msg.createdAt || Date.now());
+    const dateStr = ts.toLocaleDateString(undefined, { weekday:'long', month:'short', day:'numeric' });
+    const today = new Date().toLocaleDateString(undefined, { weekday:'long', month:'short', day:'numeric' });
+    const yesterday = new Date(Date.now()-86400000).toLocaleDateString(undefined, { weekday:'long', month:'short', day:'numeric' });
+
+    if (dateStr !== lastDate) {
+      lastDate = dateStr;
+      const label = dateStr === today ? 'Today' : dateStr === yesterday ? 'Yesterday' : dateStr;
+      html += `<div class="date-divider"><span>${label}</span></div>`;
+    }
+
+    const prevMsg = messages[i-1];
+    const showAvatar = !isOut && (!prevMsg || prevMsg.senderId !== msg.senderId);
+    const showName = showAvatar;
+
+    html += `
+      <div class="msg-row ${isOut?'out':'in'}" data-msgid="${msg.id}" data-isout="${isOut}">
+        ${!isOut ? `
+          <div class="msg-avatar-space">
+            ${showAvatar ? `<div class="msg-sender-avatar" style="${avatarColor(msg.senderName)}">${initials(msg.senderName)}</div>` : ''}
+          </div>
+        ` : ''}
+        <div class="msg-bubble-wrap" style="position:relative;">
+          ${showName && !isOut ? `<div class="msg-sender-name">${esc(msg.senderName)}</div>` : ''}
+          ${msg.deletedForEveryone && msg.replacementNote ? `
+            <div class="msg-bubble" style="opacity:0.45;font-style:italic;font-size:13px;">${twEsc(msg.replacementNote)}</div>
+          ` : msg.deletedForEveryone ? '' : `
+            ${msg.mediaUrl && msg.mediaType === 'image' ? `<img class="msg-media-img" src="${esc(msg.mediaUrl)}" alt="Image" id="img-${msg.id}" />` : ''}
+            ${msg.mediaUrl && msg.mediaType === 'video' ? `<video class="msg-media-video" src="${esc(msg.mediaUrl)}" controls playsinline></video>` : ''}
+            ${msg.text ? `<div class="msg-bubble${msg._pending ? ' pending' : ''}" ${msg.isIcon && msg.iconColor ? `style="border-left:3px solid ${msg.iconColor};background:rgba(${hexToRgb(msg.iconColor)},0.1);"` : ''}>${esc(msg.text)}</div>` : (msg.mediaUrl ? '' : `<div class="msg-bubble${msg._pending ? ' pending' : ''}">${esc(msg.text)}</div>`)}
+            ${msg.text && twWordsOnly(msg.text) > 40 ? `
+              <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">
+                <button class="read-btn" data-readview="1" data-txt="${encodeURIComponent(msg.text)}">📄 Reading view</button>
+                <button class="read-btn" data-reformat="1" data-txt="${encodeURIComponent(msg.text)}">📋 Reformat</button>
+                <button class="read-btn" data-summarise="1" data-txt="${encodeURIComponent(msg.text)}">✂️ Summarise</button>
+              </div>
+            ` : ''}
+          `}
+          <div class="msg-meta">
+            <span>${formatMsgTime(ts)}</span>
+            ${msg.edited ? `<span style="font-size:10px;color:var(--text3);font-style:italic;">edited</span>` : ''}
+            ${msg.text && spVal('showWordCount', true) ? `<span style="font-size:10px;color:var(--text3);">${twWordsOnly(msg.text)}w</span>` : ''}
+            <span style="font-size:10px;color:var(--text3);">~${twDur(twTime(msg.text||'', spGetEffectiveWpm(), true))}</span>
+            ${isOut ? `<span class="msg-status ${msg._pending ? '' : (msg.read?'read':'sent')}">${msg._pending ? '🕐' : (msg.read?'✓✓':'✓')}</span>` : ''}
+          </div>
+          ${msg.text ? `<button class="read-btn" data-txt="${encodeURIComponent(msg.text)}">📖 Show read</button>` : ''}
+          ${!isOut && msg.text ? `
+            <div class="msg-status-icons" data-msgid="${msg.id}">
+              ${(msg.statusIcons||{})[currentUser.uid] ? `
+                <span class="msg-status-chip">${getStatusIcon(msg.statusIcons[currentUser.uid])}</span>
+              ` : `
+                <button class="msg-status-add" data-msgid="${msg.id}" title="Add processing status">＋</button>
+              `}
+            </div>
+          ` : ''}
+        </div>
+      </div>`;
+  });
+
+  return html;
+}
+
+function renderNewChatModal() {
+  return `<div class="overlay" id="overlay">
+    <div class="modal">
+      <h2>New conversation</h2>
+      <p>Enter the User ID of who you want to message. They can share it from their profile.</p>
+      <div id="new-chat-error"></div>
+      <div class="field-wrap">
+        <label class="field-label">Their User ID</label>
+        <input class="field-input" id="new-chat-uid" placeholder="Paste their UID here…"/>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="new-chat-cancel">Cancel</button>
+        <button class="btn btn-primary" id="new-chat-go">Start chat</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderProfileModal() {
+  return `<div class="overlay" id="overlay">
+    <div class="modal">
+      <h2>My profile</h2>
+      <p>Share your User ID so others can message you.</p>
+      <div class="uid-card">
+        <div style="flex:1;">
+          <div class="uid-label">YOUR USER ID</div>
+          <div class="uid-value">${currentUser.uid}</div>
+        </div>
+        <button class="copy-btn" id="copy-uid">📋 Copy</button>
+      </div>
+      <div class="field-wrap">
+        <label class="field-label">Display name</label>
+        <input class="field-input" id="profile-name" value="${esc(currentUser.displayName || '')}"/>
+      </div>
+      <div class="field-wrap">
+        <label class="field-label">Email</label>
+        <input class="field-input" value="${esc(currentUser.email)}" disabled style="opacity:0.5;"/>
+      </div>
+      <div id="profile-feedback"></div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="profile-close">Close</button>
+        <button class="btn btn-primary" id="profile-save">Save name</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ── Bind events ───────────────────────────────────────────────────────────
+function bindAppEvents() {
+  // Profile menu
+  const profileBtn = document.getElementById('profile-btn');
+  if (profileBtn) profileBtn.onclick = (e) => {
+    e.stopPropagation();
+    profileMenuOpen = !profileMenuOpen;
+    render();
+  };
+  document.getElementById('pm-profile')?.addEventListener('click', () => {
+    profileMenuOpen = false; showProfile = true; render();
+  });
+  document.getElementById('pm-sensory')?.addEventListener('click', () => {
+    profileMenuOpen = false; showSensory = true; render();
+  });
+  document.getElementById('pm-notif')?.addEventListener('click', () => {
+    profileMenuOpen = false;
+    if (localStorage.getItem('tw_notif') === 'enabled') {
+      localStorage.setItem('tw_notif', 'disabled');
+      showToast('Notifications off');
+      render();
+    } else {
+      askNotificationPermission();
+    }
+  });
+  document.getElementById('pm-verify')?.addEventListener('click', async () => {
+    profileMenuOpen = false;
+    if (!currentUser) return;
+    try {
+      await sendEmailVerification(currentUser);
+      showToast('Verification email sent ✓');
+    } catch(e) { showToast('Could not send: ' + e.message); }
+    render();
+  });
+  document.getElementById('pm-signout')?.addEventListener('click', async () => {
+    profileMenuOpen = false;
+    await setPresence(false);
+    await signOut(auth);
+  });
+
+  // Close profile menu on click outside
+  document.addEventListener('click', closeProfileMenu, { once: true });
+
+  // Convo items
+  document.getElementById('self-thread-btn')?.addEventListener('click', () => openSelfThread());
+  document.querySelectorAll('.chat-item[data-convo]').forEach(el => {
+    el.onclick = () => openConvo(el.dataset.convo);
+  });
+
+  // New chat
+  document.getElementById('new-chat-btn')?.addEventListener('click', () => {
+    showNewChat = true; render();
+  });
+
+  // New chat modal
+  document.getElementById('new-chat-cancel')?.addEventListener('click', () => {
+    showNewChat = false; render();
+  });
+  document.getElementById('new-chat-go')?.addEventListener('click', startNewChat);
+  document.getElementById('overlay')?.addEventListener('click', (e) => {
+    if (e.target.id === 'overlay') {
+      showNewChat = false; showProfile = false; render();
+    }
+  });
+  document.getElementById('new-chat-uid')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') startNewChat();
+  });
+
+  // Profile modal
+  document.getElementById('profile-close')?.addEventListener('click', () => {
+    showProfile = false; render();
+  });
+  document.getElementById('copy-uid')?.addEventListener('click', () => {
+    copyToClipboard(currentUser.uid, 'User ID copied!');
+  });
+  document.getElementById('profile-save')?.addEventListener('click', saveProfile);
+
+  // Chat actions
+  document.getElementById('back-btn')?.addEventListener('click', () => {
+    showMobileChat = false; render();
+  });
+  document.getElementById('copy-uid-btn')?.addEventListener('click', () => {
+    const convo = conversations.find(c => c.id === activeConvoId);
+    if (!convo) return;
+    const other = getOtherParticipant(convo);
+    copyToClipboard(other.uid, 'Their UID copied!');
+  });
+
+  // Message input
+  const msgInput = document.getElementById('msg-input');
+  const sendBtn = document.getElementById('send-btn');
+  if (msgInput) {
+    msgInput.addEventListener('input', () => {
+      // Auto-resize
+      msgInput.style.height = 'auto';
+      msgInput.style.height = Math.min(msgInput.scrollHeight, 130) + 'px';
+      sendBtn.disabled = !msgInput.value.trim();
+      updateTyping(!!msgInput.value.trim());
+    });
+    msgInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        if (!sendBtn.disabled) sendMessage();
+      }
+    });
+  }
+  sendBtn?.addEventListener('click', sendMessage);
+
+  // Search
+  document.getElementById('search-input')?.addEventListener('input', e => {
+    filterConversations(e.target.value);
+  });
+
+  // Scroll to bottom
+  scrollToBottom();
+
+  // Sensory modal
+  bindSensoryModal();
+
+  // Writing tools
+  bindWritingTools();
+
+  // Icon panel
+  document.getElementById('icon-panel-btn')?.addEventListener('click', () => openIconPanel());
+
+  // Attach media button
+  document.getElementById('attach-media-btn')?.addEventListener('click', () => {
+    document.getElementById('media-input')?.click();
+  });
+  document.getElementById('media-input')?.addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    if (file) openMediaPreview(file);
+    e.target.value = ''; // reset so same file can be picked again
+  });
+}
+
+function closeProfileMenu() {
+  if (profileMenuOpen) { profileMenuOpen = false; render(); }
+}
+
+// ── Conversations ─────────────────────────────────────────────────────────
+function subscribeConversations() {
+  if (unsubConvos) unsubConvos();
+  conversationsLoaded = false;
+
+  // Show cached conversations immediately while waiting for Firestore
+  loadConversationsFromCache();
+
+  const q = query(
+    collection(db, 'conversations'),
+    where('participants', 'array-contains', currentUser.uid)
+  );
+  unsubConvos = onSnapshot(q,
+    { includeMetadataChanges: false },
+    async (snap) => {
+      conversationsLoaded = true;
+      const convos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      // Save to localStorage backup cache
+      try {
+        localStorage.setItem('tw_convos_' + currentUser.uid, JSON.stringify(
+          convos.map(c => ({
+            id: c.id,
+            participants: c.participants,
+            participantNames: c.participantNames || {},
+            lastMessage: c.lastMessage || '',
+            lastMessageAt: c.lastMessageAt?.toMillis?.() || 0,
+            isSelf: c.isSelf || false,
+            unreadCounts: c.unreadCounts || {}
+          }))
+        ));
+      } catch(e) {}
+
+      const uids = [...new Set(convos.flatMap(c => c.participants).filter(uid => uid !== currentUser.uid))];
+      const profiles = await fetchUserProfiles(uids);
+      conversations = convos.map(c => {
+        if (c.isSelf) return { ...c, otherProfile: null };
+        const otherUid = c.participants.find(uid => uid !== currentUser.uid);
+        const profile = profiles[otherUid] || { uid: otherUid, displayName: 'Unknown', online: false };
+        return { ...c, otherProfile: profile };
+      }).sort((a, b) => {
+        const aTime = a.lastMessageAt?.toMillis?.() || 0;
+        const bTime = b.lastMessageAt?.toMillis?.() || 0;
+        return bTime - aTime;
+      });
+
+      // Save profiles to localStorage too
+      try {
+        const profileCache = {};
+        conversations.forEach(c => {
+          if (c.otherProfile) profileCache[c.otherProfile.uid] = c.otherProfile;
+        });
+        localStorage.setItem('tw_profiles_' + currentUser.uid, JSON.stringify(profileCache));
+      } catch(e) {}
+
+      render();
+    },
+    (err) => {
+      conversationsLoaded = true;
+      // Try localStorage backup cache
+      loadConversationsFromCache();
+    }
+  );
+}
+
+function loadConversationsFromCache() {
+  if (!currentUser) return;
+  try {
+    const raw = localStorage.getItem('tw_convos_' + currentUser.uid);
+    if (!raw) { conversationsLoaded = true; render(); return; }
+    const cached = JSON.parse(raw);
+    const profileRaw = localStorage.getItem('tw_profiles_' + currentUser.uid);
+    const profileCache = profileRaw ? JSON.parse(profileRaw) : {};
+
+    conversations = cached.map(c => {
+      if (c.isSelf) return { ...c, otherProfile: null, lastMessageAt: c.lastMessageAt ? { toMillis: () => c.lastMessageAt } : null };
+      const otherUid = c.participants.find(uid => uid !== currentUser.uid);
+      const profile = profileCache[otherUid] || { uid: otherUid, displayName: c.participantNames?.[otherUid] || 'Unknown', online: false };
+      return { ...c, otherProfile: profile, lastMessageAt: c.lastMessageAt ? { toMillis: () => c.lastMessageAt } : null };
+    }).sort((a, b) => {
+      const aTime = a.lastMessageAt?.toMillis?.() || 0;
+      const bTime = b.lastMessageAt?.toMillis?.() || 0;
+      return bTime - aTime;
+    });
+    conversationsLoaded = true;
+    render();
+  } catch(e) { conversationsLoaded = true; render(); }
+}
+
+async function fetchUserProfiles(uids) {
+  const result = {};
+  // Try localStorage cache first
+  let profileCache = {};
+  try {
+    const raw = localStorage.getItem('tw_profiles_' + currentUser.uid);
+    if (raw) profileCache = JSON.parse(raw);
+  } catch(e) {}
+
+  await Promise.all(uids.map(async uid => {
+    try {
+      const snap = await getDoc(doc(db, 'users', uid));
+      if (snap.exists()) result[uid] = snap.data();
+    } catch(e) {
+      // Offline — use localStorage profile cache
+      if (profileCache[uid]) {
+        result[uid] = profileCache[uid];
+      } else {
+        const cached = conversations.find(c => c.participants?.includes(uid));
+        if (cached?.participantNames?.[uid]) {
+          result[uid] = { displayName: cached.participantNames[uid], uid };
+        }
+      }
+    }
+  }));
+  return result;
+}
+
+function getOtherParticipant(convo) {
+  if (convo.otherProfile) {
+    return {
+      uid: convo.otherProfile.uid,
+      name: convo.otherProfile.displayName || 'Unknown',
+      online: convo.otherProfile.online || false,
+      lastSeen: convo.otherProfile.lastSeen
+    };
+  }
+  return { uid: '', name: 'Unknown', online: false };
+}
+
+// ── Session persistence (survives force-close) ───────────────────────────
+const SESSION_KEY = 'tw_session';
+function sessionSave() {
+  try {
+    localStorage.setItem(SESSION_KEY, JSON.stringify({
+      activeConvoId,
+      showMobileChat
+    }));
+  } catch(e) {}
+}
+function sessionRestore() {
+  try {
+    const s = JSON.parse(localStorage.getItem(SESSION_KEY) || '{}');
+    if (s.activeConvoId) activeConvoId = s.activeConvoId;
+    if (s.showMobileChat) showMobileChat = !!s.showMobileChat;
+  } catch(e) {}
+}
+
+async function openConvo(convoId) {
+  activeConvoId = convoId;
+  showMobileChat = true;
+  profileMenuOpen = false;
+  sessionSave();
+
+  // Clear unread
+  const convo = conversations.find(c => c.id === convoId);
+  if (convo && convo.unreadCounts?.[currentUser.uid] > 0) {
+    try {
+      await updateDoc(doc(db, 'conversations', convoId), {
+        [`unreadCounts.${currentUser.uid}`]: 0
+      });
+    } catch(e) {}
+  }
+
+  render();
+  subscribeMessages(convoId);
+}
+
+function filterConversations(q) {
+  const term = q.toLowerCase();
+  document.querySelectorAll('.chat-item').forEach(el => {
+    const name = el.querySelector('.chat-name')?.textContent.toLowerCase() || '';
+    el.style.display = name.includes(term) ? '' : 'none';
+  });
+}
+
+// ── Start new chat ────────────────────────────────────────────────────────
+async function startNewChat() {
+  const uidInput = document.getElementById('new-chat-uid');
+  const errorEl = document.getElementById('new-chat-error');
+  const targetUid = uidInput?.value.trim();
+  if (!targetUid) { showError(errorEl, 'Enter a User ID.'); return; }
+  if (targetUid === currentUser.uid) { showError(errorEl, "That's your own ID!"); return; }
+
+  const goBtn = document.getElementById('new-chat-go');
+  goBtn.disabled = true;
+  goBtn.innerHTML = '<span class="spinner"></span>';
+
+  try {
+    // Check user exists
+    const userSnap = await getDoc(doc(db, 'users', targetUid));
+    if (!userSnap.exists()) {
+      showError(errorEl, 'No user found with that ID.');
+      goBtn.disabled = false; goBtn.textContent = 'Start chat';
+      return;
+    }
+
+    // Check for existing convo
+    const existingConvo = conversations.find(c => c.participants.includes(targetUid));
+    if (existingConvo) {
+      showNewChat = false;
+      await openConvo(existingConvo.id);
+      return;
+    }
+
+    // Create new conversation
+    const sortedParticipants = [currentUser.uid, targetUid].sort();
+    const convoRef = await addDoc(collection(db, 'conversations'), {
+      participants: sortedParticipants,
+      participantNames: {
+        [currentUser.uid]: currentUser.displayName || currentUser.email,
+        [targetUid]: userSnap.data().displayName
+      },
+      createdAt: serverTimestamp(),
+      lastMessageAt: serverTimestamp(),
+      lastMessage: '',
+      unreadCounts: { [currentUser.uid]: 0, [targetUid]: 0 }
+    });
+
+    showNewChat = false;
+    await openConvo(convoRef.id);
+  } catch(e) {
+    showError(errorEl, 'Something went wrong: ' + e.message);
+    goBtn.disabled = false; goBtn.textContent = 'Start chat';
+  }
+}
+
+function showError(el, msg) {
+  if (el) el.innerHTML = `<div class="error-msg">${msg}</div>`;
+}
+
+// ── Messages ──────────────────────────────────────────────────────────────
+function subscribeMessages(convoId) {
+  if (unsubMessages) unsubMessages();
+  const q = query(
+    collection(db, 'conversations', convoId, 'messages'),
+    orderBy('createdAt', 'asc'),
+    limit(80)
+  );
+  unsubMessages = onSnapshot(q,
+    { includeMetadataChanges: false },
+    (snap) => {
+      messages = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(m => {
+          if (m.deletedForEveryone) {
+            if (m.replacementNote && m.replacementNoteAt) {
+              const age = Date.now() - m.replacementNoteAt;
+              if (age < 2 * 60 * 1000) return true;
+            }
+            return false;
+          }
+          if (m.deletedFor && m.deletedFor.includes(currentUser.uid)) return false;
+          return true;
+        });
+
+      // Save messages to localStorage cache
+      try {
+        localStorage.setItem('tw_msgs_' + convoId, JSON.stringify(
+          messages.map(m => ({
+            id: m.id,
+            text: m.text || '',
+            senderId: m.senderId,
+            senderName: m.senderName || '',
+            createdAt: m.createdAt?.toMillis?.() || Date.now(),
+            read: m.read || false,
+            mediaUrl: m.mediaUrl || null,
+            mediaType: m.mediaType || null,
+            isIcon: m.isIcon || false,
+            iconColor: m.iconColor || null,
+            edited: m.edited || false,
+            partOf: m.partOf || null,
+            partIndex: m.partIndex || null
+          }))
+        ));
+      } catch(e) {}
+
+      if (navigator.onLine) markRead(convoId);
+      const area = document.getElementById('messages-area');
+      if (area) {
+        const atBottom = area.scrollHeight - area.scrollTop - area.clientHeight < 80;
+        area.innerHTML = renderMessages();
+        if (atBottom) scrollToBottom();
+      }
+    },
+    (err) => {
+      // Offline — load from localStorage cache
+      try {
+        const raw = localStorage.getItem('tw_msgs_' + convoId);
+        if (raw) {
+          const cached = JSON.parse(raw);
+          messages = cached.map(m => ({
+            ...m,
+            createdAt: m.createdAt ? { toMillis: () => m.createdAt, toDate: () => new Date(m.createdAt) } : null
+          }));
+          const area = document.getElementById('messages-area');
+          if (area) {
+            area.innerHTML = renderMessages();
+            scrollToBottom();
+          }
+        }
+      } catch(e) {}
+    }
+  );
+}
+
+async function markRead(convoId) {
+  try {
+    const batch = writeBatch(db);
+    const unread = messages.filter(m => m.senderId !== currentUser.uid && !m.read);
+    unread.forEach(m => {
+      batch.update(doc(db, 'conversations', convoId, 'messages', m.id), { read: true });
+    });
+    if (unread.length > 0) {
+      batch.update(doc(db, 'conversations', convoId), {
+        [`unreadCounts.${currentUser.uid}`]: 0
+      });
+    }
+    await batch.commit();
+  } catch(e) {}
+}
+
+// Rate limit state
+let lastSendTime = 0;
+let sendCount = 0;
+let sendWindowStart = 0;
+
+// ── Offline message queue ─────────────────────────────────────────────────
+// Messages typed while offline are stored in localStorage and flushed
+// automatically the moment the connection comes back.
+
+const QUEUE_KEY = 'tw_offline_queue';
+
+function queueLoad() {
+  try { return JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]'); } catch { return []; }
+}
+function queueSave(q) {
+  try { localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); } catch {}
+}
+function queueAdd(item) {
+  const q = queueLoad();
+  q.push(item);
+  queueSave(q);
+}
+function queueRemove(id) {
+  queueSave(queueLoad().filter(m => m._qid !== id));
+}
+
+// Optimistically render a pending message in the UI (so the sender sees it immediately)
+function renderPendingMessage(text, convoId) {
+  if (convoId !== activeConvoId) return;
+  const area = document.getElementById('messages-area');
+  if (!area) return;
+  const ts = new Date();
+  const fakeMsg = {
+    id: 'pending-' + Date.now(),
+    text,
+    senderId: currentUser.uid,
+    senderName: currentUser.displayName || currentUser.email,
+    createdAt: { toDate: () => ts, toMillis: () => ts.getTime() },
+    read: false,
+    _pending: true
+  };
+  messages.push(fakeMsg);
+  area.innerHTML = renderMessages();
+  scrollToBottom();
+}
+
+// Remove a pending optimistic message from the UI once it's confirmed or replaced
+function removePendingMessage(qid) {
+  messages = messages.filter(m => m.id !== 'pending-' + qid);
+  const area = document.getElementById('messages-area');
+  if (area) area.innerHTML = renderMessages();
+}
+
+// Flush the queue — called on boot if online, and whenever we come back online
+async function flushOfflineQueue() {
+  if (!navigator.onLine || !currentUser || !db) return;
+  const queue = queueLoad();
+  if (!queue.length) return;
+
+  for (const item of queue) {
+    // Discard items older than 7 days
+    if (Date.now() - item.queuedAt > 7 * 24 * 3600 * 1000) {
+      queueRemove(item._qid);
+      continue;
+    }
+    try {
+      // Validate the conversation still exists before writing
+      const convoSnap = await getDoc(doc(db, 'conversations', item.convoId));
+      if (!convoSnap.exists()) {
+        queueRemove(item._qid);
+        continue;
+      }
+      await addDoc(collection(db, 'conversations', item.convoId, 'messages'), {
+        text: item.text,
+        senderId: item.senderId,
+        senderName: item.senderName,
+        createdAt: serverTimestamp(),
+        read: false
+      });
+      const convoData = convoSnap.data();
+      const otherUid = convoData?.participants?.find(uid => uid !== item.senderId);
+      await updateDoc(doc(db, 'conversations', item.convoId), {
+        lastMessage: item.text.length > 100 ? item.text.slice(0, 100) + '…' : item.text,
+        lastMessageAt: serverTimestamp(),
+        ...(otherUid ? { [`unreadCounts.${otherUid}`]: increment(1) } : {})
+      });
+      queueRemove(item._qid);
+    } catch(e) {
+      // Network or permission error — leave in queue, stop for now
+      break;
+    }
+  }
+
+  const remaining = queueLoad();
+  if (remaining.length === 0 && queueLoad().length === 0) {
+    // All flushed — nothing to announce
+  } else if (remaining.length < queue.length) {
+    showToast('✓ Queued messages sent');
+  }
+}
+
+async function sendMessage() {
+  const msgInput = document.getElementById('msg-input');
+  if (!msgInput) return;
+  const text = msgInput.value.trim();
+  if (!text || !activeConvoId || !currentUser) return;
+
+  // Length cap — prevent enormous payloads
+  if (text.length > 10000) {
+    showToast('Message too long — max 10,000 characters');
+    return;
+  }
+
+  // Rate limit — max 10 messages per 10 seconds
+  const now = Date.now();
+  if (now - sendWindowStart > 10000) { sendWindowStart = now; sendCount = 0; }
+  sendCount++;
+  if (sendCount > 10) {
+    showToast('Slow down — sending too fast');
+    return;
+  }
+  lastSendTime = now;
+
+  msgInput.value = '';
+  msgInput.style.height = 'auto';
+  document.getElementById('send-btn').disabled = true;
+  updateTyping(false);
+  clearDraft();
+
+  const convo = conversations.find(c => c.id === activeConvoId);
+  const otherUid = convo?.participants.find(uid => uid !== currentUser.uid);
+
+  // ── Offline path: queue the message and show it optimistically ──
+  if (!navigator.onLine) {
+    const qid = Date.now() + '_' + Math.random().toString(36).slice(2);
+    queueAdd({
+      _qid: qid,
+      convoId: activeConvoId,
+      text,
+      senderId: currentUser.uid,
+      senderName: currentUser.displayName || currentUser.email,
+      queuedAt: Date.now()
+    });
+    renderPendingMessage(text, activeConvoId);
+    showToast('📨 Saved — will send when online');
+    return;
+  }
+
+  // ── Online path: send immediately ──
+  try {
+    await addDoc(collection(db, 'conversations', activeConvoId, 'messages'), {
+      text,
+      senderId: currentUser.uid,
+      senderName: currentUser.displayName || currentUser.email,
+      createdAt: serverTimestamp(),
+      read: false
+    });
+
+    await updateDoc(doc(db, 'conversations', activeConvoId), {
+      lastMessage: text.length > 100 ? text.slice(0, 100) + '…' : text,
+      lastMessageAt: serverTimestamp(),
+      ...(otherUid ? { [`unreadCounts.${otherUid}`]: increment(1) } : {})
+    });
+  } catch(e) {
+    // Firestore write failed even though navigator.onLine was true —
+    // queue it so it isn't lost
+    const qid = Date.now() + '_' + Math.random().toString(36).slice(2);
+    queueAdd({
+      _qid: qid,
+      convoId: activeConvoId,
+      text,
+      senderId: currentUser.uid,
+      senderName: currentUser.displayName || currentUser.email,
+      queuedAt: Date.now()
+    });
+    renderPendingMessage(text, activeConvoId);
+    showToast('📨 Saved — will retry when online');
+  }
+}
+
+// ── Typing indicator ──────────────────────────────────────────────────────
+let typingTimeout = null;
+async function updateTyping(isTyping) {
+  if (!activeConvoId || !currentUser) return;
+  try {
+    await setDoc(doc(db, 'conversations', activeConvoId, 'typing', currentUser.uid), {
+      uid: currentUser.uid,
+      isTyping,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+  } catch(e) {}
+
+  if (typingTimeout) clearTimeout(typingTimeout);
+  if (isTyping) {
+    typingTimeout = setTimeout(() => updateTyping(false), 4000);
+  }
+}
+
+// ── Presence ──────────────────────────────────────────────────────────────
+async function setPresence(online) {
+  if (!currentUser) return;
+  try {
+    await updateDoc(doc(db, 'users', currentUser.uid), {
+      online,
+      lastSeen: serverTimestamp()
+    });
+  } catch(e) {}
+}
+
+// ── Profile ───────────────────────────────────────────────────────────────
+async function saveProfile() {
+  const nameInput = document.getElementById('profile-name');
+  const feedbackEl = document.getElementById('profile-feedback');
+  const name = nameInput?.value.trim();
+  if (!name) { showError(feedbackEl, 'Name cannot be empty.'); return; }
+
+  const saveBtn = document.getElementById('profile-save');
+  saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
+
+  try {
+    await updateProfile(auth.currentUser, { displayName: name });
+    await updateDoc(doc(db, 'users', currentUser.uid), { displayName: name });
+    if (feedbackEl) feedbackEl.innerHTML = `<div class="success-msg">✓ Name updated!</div>`;
+    saveBtn.disabled = false; saveBtn.textContent = 'Save name';
+  } catch(e) {
+    showError(feedbackEl, 'Failed: ' + e.message);
+    saveBtn.disabled = false; saveBtn.textContent = 'Save name';
+  }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+function scrollToBottom() {
+  setTimeout(() => {
+    const area = document.getElementById('messages-area');
+    if (area) area.scrollTop = area.scrollHeight;
+  }, 50);
+}
+
+function initials(name) {
+  if (!name) return '?';
+  const parts = name.trim().split(' ');
+  return (parts[0][0] + (parts[1]?.[0] || '')).toUpperCase();
+}
+
+const COLORS = [
+  'background:#3d3880;color:#b8b2ff;',
+  'background:#2d4a3e;color:#7ecfaa;',
+  'background:#4a2d3e;color:#cf7ea0;',
+  'background:#3e3d2d;color:#cfc97e;',
+  'background:#2d3e4a;color:#7eb8cf;',
+  'background:#4a3d2d;color:#cfab7e;',
+];
+function avatarColor(name) {
+  if (!name) return COLORS[0];
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
+  return COLORS[Math.abs(h) % COLORS.length];
+}
+
+function formatTime(date) {
+  if (!date) return '';
+  const now = new Date();
+  const diff = now - date;
+  if (diff < 86400000 && date.getDate() === now.getDate()) {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+  if (diff < 604800000) {
+    return date.toLocaleDateString([], { weekday: 'short' });
+  }
+  return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
+function formatMsgTime(date) {
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function truncate(str, len) {
+  return str.length > len ? str.slice(0, len) + '…' : str;
+}
+
+function hexToRgb(hex) {
+  if (!hex) return '124,106,247';
+  const r = parseInt(hex.slice(1,3),16);
+  const g = parseInt(hex.slice(3,5),16);
+  const b = parseInt(hex.slice(5,7),16);
+  return `${r},${g},${b}`;
+}
+
+function esc(str) {
+  if (!str) return '';
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+async function copyToClipboard(text, msg) {
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast(msg || 'Copied!');
+  } catch(e) {
+    showToast('Copy failed — please copy manually.');
+  }
+}
+
+function showToast(msg) {
+  toast = msg;
+  if (toastTimer) clearTimeout(toastTimer);
+  render();
+  toastTimer = setTimeout(() => { toast = null; render(); }, 2500);
+}
+
+// ── Message Delete ────────────────────────────────────────────────────────
+function showDeleteMenu(msgId, isOut, x, y) {
+  closeDeleteMenu();
+  const convo = conversations.find(c => c.id === activeConvoId);
+  const isSelf = convo?.isSelf;
+  const msg = messages.find(m => m.id === msgId);
+  const canEdit = isOut && msg?.text;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'msg-delete-overlay';
+  overlay.onclick = closeDeleteMenu;
+  document.body.appendChild(overlay);
+
+  const menu = document.createElement('div');
+  menu.className = 'msg-delete-menu';
+  menu.id = 'msg-delete-menu';
+  const menuW = 210;
+  let menuH = 60;
+  if (canEdit) menuH += 50;
+  if (!isSelf && isOut) menuH += 50;
+  menu.style.left = Math.min(x, window.innerWidth - menuW - 12) + 'px';
+  menu.style.top = Math.min(y, window.innerHeight - menuH - 12) + 'px';
+
+  menu.innerHTML = `
+    ${canEdit ? `<div class="msg-delete-opt" id="edit-msg">✏️ Edit message</div>` : ''}
+    <div class="msg-delete-opt danger" id="del-for-me">🗑️ Delete for me</div>
+    ${!isSelf && isOut ? `<div class="msg-delete-opt danger" id="del-for-everyone">❌ Delete for everyone</div>` : ''}
+    ${!isOut && !isSelf ? `<div class="msg-delete-opt" id="report-msg" style="color:#f59e0b;">🚩 Report message</div>` : ''}
+  `;
+  document.body.appendChild(menu);
+
+  document.getElementById('edit-msg')?.addEventListener('click', () => { openEditMessage(msgId); closeDeleteMenu(); });
+  document.getElementById('del-for-me')?.addEventListener('click', () => { deleteForMe(msgId); closeDeleteMenu(); });
+  document.getElementById('del-for-everyone')?.addEventListener('click', () => { deleteForEveryone(msgId); closeDeleteMenu(); });
+  document.getElementById('report-msg')?.addEventListener('click', () => {
+    closeDeleteMenu();
+    const msg = messages.find(m => m.id === msgId);
+    openAbuseReport(msgId, msg?.senderId, msg?.senderName);
+  });
+}
+
+function closeDeleteMenu() {
+  document.getElementById('msg-delete-menu')?.remove();
+  document.querySelector('.msg-delete-overlay')?.remove();
+}
+
+async function deleteForMe(msgId) {
+  if (!activeConvoId || !currentUser) return;
+  const msg = messages.find(m => m.id === msgId);
+  if (!msg) return;
+  try {
+    const existing = msg.deletedFor || [];
+    if (existing.includes(currentUser.uid)) return; // already deleted
+    await updateDoc(doc(db, 'conversations', activeConvoId, 'messages', msgId), {
+      deletedFor: [...existing, currentUser.uid]
+    });
+  } catch(e) { showToast('Could not delete: ' + e.message); }
+}
+
+function deleteForEveryone(msgId) {
+  document.getElementById('tw-del-panel')?.remove();
+  document.querySelector('.tw-del-panel-overlay')?.remove();
+
+  const defaultNote = spVal('defaultDeleteNote', '');
+
+  // Panel overlay
+  const ov = document.createElement('div');
+  ov.className = 'tw-del-panel-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9990;';
+  document.body.appendChild(ov);
+
+  const panel = document.createElement('div');
+  panel.id = 'tw-del-panel';
+  panel.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#17171f;border-radius:20px 20px 0 0;padding:20px 18px 36px;z-index:9991;font-family:"DM Sans",sans-serif;color:#e8e8f0;animation:slideUp 0.2s ease;';
+
+  panel.innerHTML = `
+    <div style="width:36px;height:4px;background:#2a2a38;border-radius:2px;margin:0 auto 18px;"></div>
+    <div style="font-size:17px;font-weight:600;margin-bottom:6px;">Delete for everyone</div>
+    <div style="font-size:13px;color:#5a5a72;margin-bottom:18px;">Leave a short note in place of the message, or leave blank to remove it silently.</div>
+
+    <div style="font-size:11px;color:#5a5a72;font-weight:600;letter-spacing:0.05em;margin-bottom:6px;">REPLACEMENT NOTE (optional)</div>
+    <textarea id="tw-del-note" placeholder="e.g. sent by mistake, ignore this…" style="width:100%;background:#1e1e28;border:1.5px solid rgba(255,255,255,0.07);border-radius:12px;padding:12px;color:#e8e8f0;font-family:inherit;font-size:14px;line-height:1.5;resize:none;outline:none;box-sizing:border-box;min-height:72px;">${twEsc(defaultNote)}</textarea>
+
+    <div style="font-size:11px;color:#5a5a72;margin-top:6px;margin-bottom:18px;">Note shows for 2 minutes then disappears. ${defaultNote ? 'Your saved default has been pre-filled.' : ''}</div>
+
+    <div style="display:flex;gap:10px;">
+      <button id="tw-del-cancel" style="flex:1;padding:14px;border-radius:12px;border:none;background:#1e1e28;color:#e8e8f0;font-family:inherit;font-size:14px;cursor:pointer;">Cancel</button>
+      <button id="tw-del-confirm" style="flex:2;padding:14px;border-radius:12px;border:none;background:#ff6b6b;color:#fff;font-family:inherit;font-size:15px;font-weight:600;cursor:pointer;">Delete</button>
+    </div>
+  `;
+  document.body.appendChild(panel);
+
+  const close = () => { panel.remove(); ov.remove(); };
+  document.getElementById('tw-del-cancel').onclick = close;
+  ov.onclick = close;
+
+  document.getElementById('tw-del-confirm').onclick = () => {
+    const note = document.getElementById('tw-del-note')?.value.trim() || '';
+    close();
+    startDeleteCountdown(msgId, note);
+  };
+}
+
+function startDeleteCountdown(msgId, note) {
+  document.getElementById('tw-del-countdown')?.remove();
+
+  let seconds = 10;
+  let cancelled = false;
+
+  const bar = document.createElement('div');
+  bar.id = 'tw-del-countdown';
+  bar.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#17171f;border-top:1px solid rgba(255,255,255,0.07);padding:14px 18px;z-index:9989;font-family:"DM Sans",sans-serif;display:flex;align-items:center;gap:14px;';
+  bar.innerHTML = `
+    <div style="flex:1;">
+      <div style="font-size:13px;color:#e8e8f0;font-weight:500;">Deleting in <span id="tw-del-secs">${seconds}</span>s</div>
+      <div style="height:4px;background:#2a2a38;border-radius:2px;margin-top:6px;overflow:hidden;">
+        <div id="tw-del-bar" style="height:100%;background:#ff6b6b;border-radius:2px;width:100%;transition:width 1s linear;"></div>
+      </div>
+    </div>
+    <button id="tw-del-undo" style="padding:10px 18px;border-radius:10px;border:none;background:#7c6af7;color:#fff;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;">↩ Undo</button>
+  `;
+  document.body.appendChild(bar);
+
+  // Start bar animation
+  requestAnimationFrame(() => {
+    document.getElementById('tw-del-bar').style.width = '0%';
+  });
+
+  document.getElementById('tw-del-undo').onclick = () => {
+    cancelled = true;
+    clearInterval(timer);
+    bar.remove();
+    showToast('Delete cancelled');
+  };
+
+  const timer = setInterval(async () => {
+    if (cancelled) { clearInterval(timer); return; }
+    seconds--;
+    const secsEl = document.getElementById('tw-del-secs');
+    if (secsEl) secsEl.textContent = seconds;
+    if (seconds <= 0) {
+      clearInterval(timer);
+      bar.remove();
+      await commitDeleteForEveryone(msgId, note);
+    }
+  }, 1000);
+}
+
+async function commitDeleteForEveryone(msgId, note) {
+  if (!activeConvoId || !currentUser) return;
+  // Only sender can delete for everyone
+  const msg = messages.find(m => m.id === msgId);
+  if (!msg || msg.senderId !== currentUser.uid) {
+    showToast('You can only delete your own messages');
+    return;
+  }
+  try {
+    const now = Date.now();
+    await updateDoc(doc(db, 'conversations', activeConvoId, 'messages', msgId), {
+      deletedForEveryone: true,
+      text: '',
+      mediaUrl: null,
+      replacementNote: note || null,
+      replacementNoteAt: now
+    });
+  } catch(e) { showToast('Could not delete: ' + e.message); }
+}
+
+// ── Edit Message ──────────────────────────────────────────────────────────
+function openEditMessage(msgId) {
+  document.getElementById('tw-edit-overlay')?.remove();
+
+  const msg = messages.find(m => m.id === msgId);
+  if (!msg) return;
+
+  const originalText = msg.text;
+  const wpm = spGetEffectiveWpm();
+
+  const el = document.createElement('div');
+  el.id = 'tw-edit-overlay';
+  el.style.cssText = 'position:fixed;inset:0;background:#0f0f14;z-index:9997;display:flex;flex-direction:column;font-family:"DM Sans",sans-serif;color:#e8e8f0;';
+
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;padding:16px 18px;border-bottom:1px solid rgba(255,255,255,0.07);flex-shrink:0;">
+      <button id="tw-edit-cancel" style="width:38px;height:38px;border-radius:50%;background:#1e1e28;border:none;color:#e8e8f0;cursor:pointer;font-size:18px;">✕</button>
+      <div style="flex:1;">
+        <div style="font-size:17px;font-weight:600;">Edit message</div>
+        <div style="font-size:12px;color:#5a5a72;margin-top:2px;">Original is shown below so you don't lose track</div>
+      </div>
+      <button id="tw-edit-undo" style="background:#1e1e28;border:none;color:#a78bfa;cursor:pointer;font-size:13px;font-weight:500;padding:8px 12px;border-radius:10px;">↩ Undo</button>
+    </div>
+
+    <div style="background:#1a1a24;border-bottom:1px solid rgba(255,255,255,0.07);padding:14px 18px;flex-shrink:0;">
+      <div style="font-size:11px;color:#5a5a72;font-weight:600;letter-spacing:0.05em;margin-bottom:6px;">ORIGINAL MESSAGE</div>
+      <div style="font-size:14px;color:#9090a8;line-height:1.55;">${twEsc(originalText)}</div>
+    </div>
+
+    <div style="flex:1;overflow-y:auto;padding:18px;display:flex;flex-direction:column;gap:12px;">
+      <textarea id="tw-edit-input" style="width:100%;min-height:160px;max-height:320px;background:#1e1e28;border:1.5px solid rgba(124,106,247,0.4);border-radius:14px;padding:14px;color:#e8e8f0;font-family:inherit;font-size:16px;line-height:1.6;resize:vertical;outline:none;box-sizing:border-box;overflow-y:auto;">${twEsc(originalText)}</textarea>
+
+      <div style="display:flex;flex-wrap:wrap;gap:8px;" id="tw-edit-stats">
+        <div style="background:#1e1e28;border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:7px 12px;font-size:12.5px;color:#9090a8;" id="tw-edit-words">🔤 0 words</div>
+        <div style="background:#1e1e28;border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:7px 12px;font-size:12.5px;color:#9090a8;" id="tw-edit-chars">📝 0 chars</div>
+        <div style="background:#1e1e28;border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:7px 12px;font-size:12.5px;color:#9090a8;" id="tw-edit-readtime">⏱ ~0s to read</div>
+        <div style="background:#1e1e28;border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:7px 12px;font-size:12.5px;color:#9090a8;" id="tw-edit-sentences">💬 0 sentences</div>
+      </div>
+
+      <div style="background:#1a1a24;border-radius:12px;padding:12px 14px;" id="tw-edit-sentence-list">
+        <div style="font-size:11px;color:#5a5a72;font-weight:600;letter-spacing:0.05em;margin-bottom:8px;">SENTENCE PREVIEW</div>
+        <div id="tw-edit-sentences-body" style="display:flex;flex-direction:column;gap:6px;"></div>
+      </div>
+    </div>
+
+    <div style="flex-shrink:0;padding:14px 18px 32px;border-top:1px solid rgba(255,255,255,0.07);background:#17171f;">
+      <div id="tw-edit-confirm" style="display:none;background:#1e1e28;border-radius:14px;padding:14px;margin-bottom:12px;font-size:14px;color:#e8e8f0;text-align:center;">
+        Save this edit?
+        <div style="display:flex;gap:10px;margin-top:10px;">
+          <button id="tw-edit-confirm-no" style="flex:1;padding:10px;border-radius:10px;border:none;background:#2a2a38;color:#e8e8f0;font-family:inherit;font-size:14px;cursor:pointer;">Go back</button>
+          <button id="tw-edit-confirm-yes" style="flex:1;padding:10px;border-radius:10px;border:none;background:#7c6af7;color:#fff;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;">Yes, save</button>
+        </div>
+      </div>
+      <button id="tw-edit-save" style="width:100%;padding:15px;border-radius:14px;border:none;background:#7c6af7;color:#fff;font-family:inherit;font-size:15px;font-weight:600;cursor:pointer;">Save edit</button>
+    </div>
+  `;
+
+  document.body.appendChild(el);
+
+  const input = document.getElementById('tw-edit-input');
+
+  function updateStats() {
+    const val = input.value;
+    const words = twWords(val);
+    const chars = val.length;
+    const readSec = twTime(val, wpm);
+    const sentences = twSentences(val);
+    document.getElementById('tw-edit-words').textContent = `🔤 ${words} word${words===1?'':'s'}`;
+    document.getElementById('tw-edit-chars').textContent = `📝 ${chars} char${chars===1?'':'s'}`;
+    document.getElementById('tw-edit-readtime').textContent = `⏱ ~${twDur(readSec)} to read`;
+    document.getElementById('tw-edit-sentences').textContent = `💬 ${sentences.length} sentence${sentences.length===1?'':'s'}`;
+    const body = document.getElementById('tw-edit-sentences-body');
+    if (body) {
+      body.innerHTML = sentences.map((s, i) =>
+        `<div style="font-size:13px;color:#c0c0d8;padding:7px 10px;background:#0f0f14;border-radius:8px;line-height:1.5;">${i+1}. ${twEsc(s)}</div>`
+      ).join('');
+    }
+  }
+
+  // Init stats
+  updateStats();
+  input.addEventListener('input', updateStats);
+
+  // Undo
+  document.getElementById('tw-edit-undo').onclick = () => {
+    input.value = originalText;
+    updateStats();
+  };
+
+  // Cancel
+  document.getElementById('tw-edit-cancel').onclick = () => el.remove();
+
+  // Save — show confirm step first
+  document.getElementById('tw-edit-save').onclick = () => {
+    const newText = input.value.trim();
+    if (!newText || newText === originalText) { el.remove(); return; }
+    document.getElementById('tw-edit-confirm').style.display = 'block';
+    document.getElementById('tw-edit-save').style.display = 'none';
+  };
+
+  document.getElementById('tw-edit-confirm-no')?.addEventListener('click', () => {
+    document.getElementById('tw-edit-confirm').style.display = 'none';
+    document.getElementById('tw-edit-save').style.display = 'block';
+  });
+
+  document.getElementById('tw-edit-confirm-yes')?.addEventListener('click', async () => {
+    const newText = input.value.trim();
+    if (!newText) return;
+    // Only sender can edit
+    const msg = messages.find(m => m.id === msgId);
+    if (!msg || msg.senderId !== currentUser?.uid) {
+      showToast('You can only edit your own messages');
+      el.remove(); return;
+    }
+    // Basic length cap
+    if (newText.length > 10000) {
+      showToast('Message too long to save');
+      return;
+    }
+    try {
+      await updateDoc(doc(db, 'conversations', activeConvoId, 'messages', msgId), {
+        text: newText,
+        edited: true,
+        editedAt: serverTimestamp()
+      });
+      showToast('Message edited ✓');
+      el.remove();
+    } catch(e) {
+      showToast('Edit failed: ' + e.message);
+    }
+  });
+}
+function spGet() {
+  try { return JSON.parse(localStorage.getItem('tw_sensory') || '{}'); } catch { return {}; }
+}
+function spSet(obj) {
+  localStorage.setItem('tw_sensory', JSON.stringify({ ...spGet(), ...obj }));
+  // Also update twSave for chunk reader compatibility
+  if (obj.wpm) twSave({ wpm: obj.wpm });
+  if (obj.chunkMode) twSave({ mode: obj.chunkMode });
+}
+function spVal(key, def) {
+  const v = spGet()[key];
+  return v !== undefined ? v : def;
+}
+
+// Tracking — called when user spends time on a chunk
+let chunkOpenTime = null;
+let chunkRereadCount = 0;
+let lastChunkIdx = -1;
+
+function spTrackChunkOpen(idx) {
+  chunkOpenTime = Date.now();
+  if (idx < lastChunkIdx) {
+    chunkRereadCount++;
+    const log = spGet().rereadLog || [];
+    log.push({ t: Date.now(), hour: new Date().getHours() });
+    if (log.length > 100) log.shift();
+    spSet({ rereadLog: log });
+  }
+  lastChunkIdx = idx;
+}
+
+function spTrackChunkClose(wordCount) {
+  if (!chunkOpenTime || wordCount < 3) return;
+  const elapsed = (Date.now() - chunkOpenTime) / 1000;
+  const impliedWpm = Math.round((wordCount / elapsed) * 60);
+  if (impliedWpm < 30 || impliedWpm > 800) return; // ignore outliers
+
+  const log = spGet().wpmLog || [];
+  const hour = new Date().getHours();
+  log.push({ wpm: impliedWpm, hour, t: Date.now() });
+  if (log.length > 200) log.shift();
+
+  // Rolling average
+  const recent = log.slice(-20);
+  const avg = Math.round(recent.reduce((s, e) => s + e.wpm, 0) / recent.length);
+  spSet({ wpmLog: log, learnedWpm: avg });
+  chunkOpenTime = null;
+}
+
+function spGetEffectiveWpm() {
+  const p = spGet();
+  // Time-of-day adjustment
+  const hour = new Date().getHours();
+  const log = p.wpmLog || [];
+  if (log.length >= 10) {
+    const hourLog = log.filter(e => Math.abs(e.hour - hour) <= 2);
+    if (hourLog.length >= 5) {
+      return Math.round(hourLog.reduce((s, e) => s + e.wpm, 0) / hourLog.length);
+    }
+  }
+  return p.learnedWpm || p.wpm || 200;
+}
+
+function spGetStats() {
+  const p = spGet();
+  const log = p.wpmLog || [];
+  const rereadLog = p.rereadLog || [];
+  const hour = new Date().getHours();
+
+  const recentWpm = log.slice(-10);
+  const avgWpm = recentWpm.length ? Math.round(recentWpm.reduce((s,e) => s+e.wpm,0) / recentWpm.length) : null;
+
+  // Time of day stats
+  const morning = log.filter(e => e.hour >= 6 && e.hour < 12);
+  const afternoon = log.filter(e => e.hour >= 12 && e.hour < 18);
+  const evening = log.filter(e => e.hour >= 18 || e.hour < 6);
+  const bestTime = [
+    { label: 'Morning', wpm: morning.length ? Math.round(morning.reduce((s,e)=>s+e.wpm,0)/morning.length) : 0 },
+    { label: 'Afternoon', wpm: afternoon.length ? Math.round(afternoon.reduce((s,e)=>s+e.wpm,0)/afternoon.length) : 0 },
+    { label: 'Evening', wpm: evening.length ? Math.round(evening.reduce((s,e)=>s+e.wpm,0)/evening.length) : 0 },
+  ].filter(t => t.wpm > 0).sort((a,b) => b.wpm - a.wpm)[0];
+
+  const recentReads = rereadLog.filter(e => Date.now() - e.t < 7 * 86400000).length;
+
+  return { avgWpm, bestTime, recentReads, totalSessions: log.length };
+}
+
+function renderSensoryModal() {
+  const p = spGet();
+  const stats = spGetStats();
+  const effectiveWpm = spGetEffectiveWpm();
+
+  return `<div class="overlay" id="overlay">
+    <div class="modal" style="max-height:85vh;overflow-y:auto;">
+      <h2>🧠 Sensory profile</h2>
+      <p style="font-size:13px;color:var(--text3);margin-top:-8px;margin-bottom:16px;">Your reading settings and habits. Threadwise learns from how you read over time.</p>
+
+      <div style="background:var(--surface2);border-radius:12px;padding:14px;margin-bottom:18px;">
+        <div style="font-size:12px;font-weight:600;color:var(--text3);letter-spacing:0.05em;margin-bottom:10px;">YOUR READING HABITS</div>
+        ${stats.totalSessions < 5 ? `<div style="font-size:13px;color:var(--text3);">Keep using slow read — Threadwise will learn your patterns.</div>` : `
+          <div style="display:flex;flex-wrap:wrap;gap:8px;">
+            ${stats.avgWpm ? `<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 12px;font-size:12.5px;color:var(--text2);">📖 ~${stats.avgWpm} WPM recently</div>` : ''}
+            ${stats.bestTime ? `<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 12px;font-size:12.5px;color:var(--text2);">⏰ Reads fastest in ${stats.bestTime.label}</div>` : ''}
+            ${stats.recentReads > 0 ? `<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 12px;font-size:12.5px;color:var(--text2);">🔁 ${stats.recentReads} re-reads this week</div>` : ''}
+            <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 12px;font-size:12.5px;color:var(--text2);">✅ ${stats.totalSessions} reading sessions</div>
+          </div>
+        `}
+        ${stats.totalSessions >= 5 ? `<div style="font-size:11px;color:var(--text3);margin-top:10px;">Current adjusted speed for this time of day: <strong>${effectiveWpm} WPM</strong></div>` : ''}
+      </div>
+
+      <div class="field-wrap">
+        <label class="field-label">Reading speed (WPM)</label>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <input type="range" min="50" max="500" step="10" value="${p.wpm||200}" id="sp-wpm-range" style="flex:1;accent-color:var(--accent);" />
+          <span id="sp-wpm-val" style="font-size:14px;font-weight:600;color:var(--text);min-width:42px;">${p.wpm||200}</span>
+        </div>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px;">Average person reads ~200 WPM. Lower = more time shown per chunk.</div>
+      </div>
+
+      <div class="field-wrap">
+        <label class="field-label">Text size in slow read</label>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <input type="range" min="14" max="32" step="1" value="${p.fontSize||20}" id="sp-fontsize-range" style="flex:1;accent-color:var(--accent);" />
+          <span id="sp-fontsize-val" style="font-size:14px;font-weight:600;color:var(--text);min-width:32px;">${p.fontSize||20}px</span>
+        </div>
+      </div>
+
+      <div class="field-wrap">
+        <label class="field-label">Line spacing in slow read</label>
+        <div style="display:flex;gap:8px;margin-top:4px;">
+          ${[['compact','1.3'],['normal','1.65'],['spacious','2.1']].map(([k,v]) => `
+            <button class="sp-spacing-btn ${(p.lineSpacing||'normal')===k?'active':''}" data-spacing="${k}" data-val="${v}"
+              style="flex:1;padding:8px;border-radius:10px;border:1.5px solid ${(p.lineSpacing||'normal')===k?'var(--accent)':'var(--border)'};background:${(p.lineSpacing||'normal')===k?'var(--accent-dim)':'var(--surface2)'};color:var(--text);cursor:pointer;font-family:var(--font);font-size:13px;">
+              ${k.charAt(0).toUpperCase()+k.slice(1)}
+            </button>
+          `).join('')}
+        </div>
+      </div>
+
+      <div class="field-wrap">
+        <label class="field-label">Preferred chunk mode</label>
+        <div style="display:flex;gap:8px;margin-top:4px;">
+          ${['sentence','pair','paragraph'].map(m => `
+            <button class="sp-chunk-btn ${(p.chunkMode||'sentence')===m?'active':''}" data-mode="${m}"
+              style="flex:1;padding:8px;border-radius:10px;border:1.5px solid ${(p.chunkMode||'sentence')===m?'var(--accent)':'var(--border)'};background:${(p.chunkMode||'sentence')===m?'var(--accent-dim)':'var(--surface2)'};color:var(--text);cursor:pointer;font-family:var(--font);font-size:13px;">
+              ${m.charAt(0).toUpperCase()+m.slice(1)}
+            </button>
+          `).join('')}
+        </div>
+        <div style="font-size:11px;color:var(--text3);margin-top:6px;">Sentence = one at a time · Pair = two · Paragraph = four grouped</div>
+      </div>
+
+      <div class="field-wrap">
+        <label class="field-label">Show on messages</label>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-top:6px;">
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+            <input type="checkbox" id="sp-show-wordcount" ${p.showWordCount!==false?'checked':''} style="width:18px;height:18px;accent-color:var(--accent);" />
+            <span style="font-size:14px;color:var(--text);">Word count on every message</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+            <input type="checkbox" id="sp-show-readtime" ${p.showReadTime!==false?'checked':''} style="width:18px;height:18px;accent-color:var(--accent);" />
+            <span style="font-size:14px;color:var(--text);">Read time estimate on every message</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="field-wrap">
+        <label class="field-label">My message comfort length</label>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <input type="range" min="10" max="300" step="5" value="${p.comfortWords||80}" id="sp-comfort-range" style="flex:1;accent-color:var(--accent);" />
+          <span id="sp-comfort-val" style="font-size:14px;font-weight:600;color:var(--text);min-width:60px;">${p.comfortWords||80} words</span>
+        </div>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px;">When someone types more than this to you, they'll get a gentle nudge that the message might be long for you. Only you can see this setting.</div>
+      </div>
+
+      <div class="field-wrap">
+        <label class="field-label">Default replacement note</label>
+        <input class="field-input" id="sp-delete-note" placeholder="e.g. sent by mistake, ignore this…" value="${esc(p.defaultDeleteNote||'')}"/>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px;">Pre-filled when you delete a message for everyone. Leave blank for no default.</div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="sp-close">Close</button>
+        <button class="btn btn-primary" id="sp-save">Save</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function bindSensoryModal() {
+  document.getElementById('sp-close')?.addEventListener('click', () => { showSensory = false; render(); });
+
+  // Live slider labels
+  document.getElementById('sp-wpm-range')?.addEventListener('input', e => {
+    document.getElementById('sp-wpm-val').textContent = e.target.value;
+  });
+  document.getElementById('sp-fontsize-range')?.addEventListener('input', e => {
+    document.getElementById('sp-fontsize-val').textContent = e.target.value + 'px';
+  });
+  document.getElementById('sp-comfort-range')?.addEventListener('input', e => {
+    document.getElementById('sp-comfort-val').textContent = e.target.value + ' words';
+  });
+
+  // Spacing buttons
+  document.querySelectorAll('.sp-spacing-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.sp-spacing-btn').forEach(b => {
+        b.style.borderColor = 'var(--border)'; b.style.background = 'var(--surface2)'; b.classList.remove('active');
+      });
+      btn.style.borderColor = 'var(--accent)'; btn.style.background = 'var(--accent-dim)'; btn.classList.add('active');
+    });
+  });
+
+  // Chunk mode buttons
+  document.querySelectorAll('.sp-chunk-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.sp-chunk-btn').forEach(b => {
+        b.style.borderColor = 'var(--border)'; b.style.background = 'var(--surface2)'; b.classList.remove('active');
+      });
+      btn.style.borderColor = 'var(--accent)'; btn.style.background = 'var(--accent-dim)'; btn.classList.add('active');
+    });
+  });
+
+  document.getElementById('sp-save')?.addEventListener('click', () => {
+    const wpm = parseInt(document.getElementById('sp-wpm-range')?.value) || 200;
+    const fontSize = parseInt(document.getElementById('sp-fontsize-range')?.value) || 20;
+    const spacing = document.querySelector('.sp-spacing-btn.active')?.dataset.spacing || 'normal';
+    const chunkMode = document.querySelector('.sp-chunk-btn.active')?.dataset.mode || 'sentence';
+    const showWordCount = document.getElementById('sp-show-wordcount')?.checked !== false;
+    const showReadTime = document.getElementById('sp-show-readtime')?.checked !== false;
+    const defaultDeleteNote = document.getElementById('sp-delete-note')?.value.trim() || '';
+    const comfortWords = parseInt(document.getElementById('sp-comfort-range')?.value) || 80;
+
+    spSet({ wpm, fontSize, lineSpacing: spacing, chunkMode, showWordCount, showReadTime, defaultDeleteNote, comfortWords });
+
+    // Save comfort words to Firestore so others can check it
+    if (currentUser) {
+      updateDoc(doc(db, 'users', currentUser.uid), { comfortWords }).catch(() => {});
+    }
+    twMode = chunkMode;
+    showSensory = false;
+    showToast('Sensory profile saved ✓');
+    render();
+  });
+}
+function openMediaPreview(file) {
+  document.getElementById('tw-media-preview')?.remove();
+
+  const isVideo = file.type.startsWith('video/');
+  const objectUrl = URL.createObjectURL(file);
+
+  const el = document.createElement('div');
+  el.id = 'tw-media-preview';
+  el.style.cssText = 'position:fixed;inset:0;background:#0f0f14;z-index:9998;display:flex;flex-direction:column;font-family:"DM Sans",sans-serif;color:#e8e8f0;';
+
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;padding:16px 18px;border-bottom:1px solid rgba(255,255,255,0.07);flex-shrink:0;">
+      <button id="tw-mp-cancel" style="width:38px;height:38px;border-radius:50%;background:#1e1e28;border:none;color:#e8e8f0;cursor:pointer;font-size:18px;">✕</button>
+      <div>
+        <div style="font-size:17px;font-weight:600;">Ready to send?</div>
+        <div style="font-size:12px;color:#5a5a72;margin-top:2px;">Take your time. Send when you're ready.</div>
+      </div>
+    </div>
+
+    <div style="flex:1;display:flex;align-items:center;justify-content:center;padding:24px;overflow:hidden;">
+      ${isVideo
+        ? `<video src="${objectUrl}" controls playsinline style="max-width:100%;max-height:100%;border-radius:14px;"></video>`
+        : `<img src="${objectUrl}" style="max-width:100%;max-height:100%;border-radius:14px;object-fit:contain;" alt="Preview" />`
+      }
+    </div>
+
+    <div id="tw-mp-progress" style="display:none;padding:0 24px 8px;">
+      <div style="font-size:12px;color:#5a5a72;margin-bottom:6px;" id="tw-mp-pct">Uploading…</div>
+      <div style="height:6px;border-radius:3px;background:#1e1e28;overflow:hidden;">
+        <div id="tw-mp-bar" style="width:0%;height:100%;background:#7c6af7;border-radius:3px;transition:width 0.2s;"></div>
+      </div>
+    </div>
+
+    <div style="flex-shrink:0;padding:16px 18px 32px;display:flex;gap:12px;">
+      <button id="tw-mp-cancel2" style="flex:1;padding:14px;border-radius:14px;border:none;background:#1e1e28;color:#e8e8f0;font-family:inherit;font-size:15px;font-weight:500;cursor:pointer;">Cancel</button>
+      <button id="tw-mp-send" style="flex:2;padding:14px;border-radius:14px;border:none;background:#7c6af7;color:#fff;font-family:inherit;font-size:15px;font-weight:600;cursor:pointer;">Send</button>
+    </div>
+  `;
+
+  document.body.appendChild(el);
+
+  const close = () => { URL.revokeObjectURL(objectUrl); el.remove(); };
+  document.getElementById('tw-mp-cancel').onclick = close;
+  document.getElementById('tw-mp-cancel2').onclick = close;
+  document.getElementById('tw-mp-send').onclick = () => uploadMedia(file, isVideo, el, objectUrl);
+}
+
+async function uploadMedia(file, isVideo, previewEl, objectUrl) {
+  if (!activeConvoId || !currentUser) return;
+
+  // Validate file type
+  const allowedTypes = ['image/jpeg','image/png','image/gif','image/webp','video/mp4','video/webm','video/quicktime'];
+  if (!allowedTypes.includes(file.type)) {
+    showToast('File type not supported');
+    URL.revokeObjectURL(objectUrl);
+    previewEl.remove();
+    return;
+  }
+
+  // Validate file size — 20MB max
+  const maxSize = 20 * 1024 * 1024;
+  if (file.size > maxSize) {
+    showToast('File too large — max 20MB');
+    URL.revokeObjectURL(objectUrl);
+    previewEl.remove();
+    return;
+  }
+
+  const sendBtn = document.getElementById('tw-mp-send');
+  const cancelBtns = previewEl.querySelectorAll('button');
+  cancelBtns.forEach(b => b.disabled = true);
+  sendBtn.textContent = 'Uploading…';
+
+  const progressWrap = document.getElementById('tw-mp-progress');
+  const bar = document.getElementById('tw-mp-bar');
+  const pct = document.getElementById('tw-mp-pct');
+  progressWrap.style.display = 'block';
+  bar.style.width = '30%';
+  pct.textContent = 'Uploading…';
+
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('upload_preset', CLOUDINARY_PRESET);
+  formData.append('folder', 'threadwise');
+
+  const resourceType = isVideo ? 'video' : 'image';
+  const uploadUrl = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/${resourceType}/upload`;
+
+  try {
+    bar.style.width = '60%';
+    pct.textContent = 'Uploading…';
+
+    const res = await fetch(uploadUrl, { method: 'POST', body: formData });
+    bar.style.width = '85%';
+
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error('Cloudinary error: ' + err);
+    }
+
+    const data = await res.json();
+    const mediaUrl = data.secure_url;
+
+    // Validate URL is from Cloudinary — don't save arbitrary URLs
+    if (!mediaUrl || !mediaUrl.startsWith('https://res.cloudinary.com/')) {
+      throw new Error('Invalid media URL returned');
+    }
+    bar.style.width = '100%';
+    pct.textContent = 'Sending…';
+
+    const convo = conversations.find(c => c.id === activeConvoId);
+    const otherUid = convo?.participants.find(uid => uid !== currentUser.uid);
+    const mediaType = isVideo ? 'video' : 'image';
+
+    await addDoc(collection(db, 'conversations', activeConvoId, 'messages'), {
+      text: '',
+      mediaUrl,
+      mediaType,
+      senderId: currentUser.uid,
+      senderName: currentUser.displayName || currentUser.email,
+      createdAt: serverTimestamp(),
+      read: false
+    });
+
+    await updateDoc(doc(db, 'conversations', activeConvoId), {
+      lastMessage: isVideo ? '📹 Video' : '🖼️ Image',
+      lastMessageAt: serverTimestamp(),
+      ...(otherUid ? { [`unreadCounts.${otherUid}`]: increment(1) } : {})
+    });
+
+    URL.revokeObjectURL(objectUrl);
+    previewEl.remove();
+
+  } catch(e) {
+    showToast('Failed to send media. Please try again.');
+    cancelBtns.forEach(b => b.disabled = false);
+    sendBtn.textContent = 'Send';
+    bar.style.width = '0%';
+  }
+}
+
+// ── Slow Read / Chunk Reader ──────────────────────────────────────────────
+function twGetWpm() {
+  try { return parseInt(JSON.parse(localStorage.getItem('tw_s')||'{}').wpm)||200; } catch { return 200; }
+}
+function twSave(obj) {
+  try { localStorage.setItem('tw_s', JSON.stringify({...JSON.parse(localStorage.getItem('tw_s')||'{}'),...obj})); } catch {}
+}
+function twSentences(text) {
+  if (!text) return [];
+  // Split on sentence-ending punctuation
+  let parts = text.match(/[^.!?]+[.!?]+\s*/g);
+  if (parts && parts.length > 1) {
+    // Some sentences may still be very long — sub-chunk anything over 30 words
+    const result = [];
+    parts.map(s => s.trim()).filter(Boolean).forEach(s => {
+      const words = s.split(/\s+/);
+      if (words.length > 30) {
+        for (let i = 0; i < words.length; i += 20) result.push(words.slice(i, i+20).join(' '));
+      } else {
+        result.push(s);
+      }
+    });
+    return result;
+  }
+  // No punctuation — split on line breaks
+  const lines = text.split(/\n+/).map(s => s.trim()).filter(Boolean);
+  if (lines.length > 1) return lines;
+  // Single long block — always split into 20-word chunks
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  if (words.length <= 20) return [text.trim()];
+  const chunks = [];
+  for (let i = 0; i < words.length; i += 20) chunks.push(words.slice(i, i+20).join(' '));
+  return chunks;
+}
+function twChunk(text, mode) {
+  const s = twSentences(text);
+  if (!s.length) return [text];
+  if (mode === 'sentence') return s;
+  if (mode === 'pair') { const o=[]; for(let i=0;i<s.length;i+=2) o.push([s[i],s[i+1]].filter(Boolean).join(' ')); return o; }
+  const o=[]; for(let i=0;i<s.length;i+=4) o.push(s.slice(i,i+4).join(' ')); return o;
+}
+function twWords(t) { return t ? t.trim().split(/\s+/).filter(Boolean).length : 0; }
+function twWordsOnly(t) {
+  if (!t) return 0;
+  // Strip emojis and non-alphabetic tokens before counting
+  const stripped = t.replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27FF}\u{FE00}-\u{FEFF}]/gu, '')
+                    .replace(/[^\w\s'-]/g, ' ');
+  return stripped.trim().split(/\s+/).filter(w => w.length > 0).length;
+}
+function twTime(t, wpm, wordsOnly) {
+  const words = wordsOnly ? twWordsOnly(t) : twWords(t);
+  return Math.max(1, Math.round((words / (wpm||200)) * 60));
+}
+function twDur(s) { return s<60 ? s+'s' : Math.floor(s/60)+'m'+(s%60?' '+s%60+'s':''); }
+function twEsc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+let twMode = 'sentence';
+let twIdx = 0;
+let twText = '';
+
+function openReadingView(text) {
+  document.getElementById('tw-reading-view')?.remove();
+  const wpm = spGetEffectiveWpm();
+  const fontSize = spVal('fontSize', 20) + 2;
+  const lineSpacingMap = { compact: '1.5', normal: '1.9', spacious: '2.3' };
+  const lineHeight = lineSpacingMap[spVal('lineSpacing','normal')] || '1.9';
+  const readSec = twTime(text, wpm);
+  const wordCount = twWords(text);
+
+  // Split on section dividers if present, otherwise paragraphs
+  const sections = text.split(/\n\n---\n\n|\n\n/).map(s => s.trim()).filter(Boolean);
+
+  const el = document.createElement('div');
+  el.id = 'tw-reading-view';
+  el.style.cssText = 'position:fixed;inset:0;background:#0a0a10;z-index:9998;display:flex;flex-direction:column;font-family:"DM Sans",sans-serif;color:#e8e8f0;';
+
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;padding:16px 18px;border-bottom:1px solid rgba(255,255,255,0.07);flex-shrink:0;">
+      <button id="tw-rv-close" style="width:38px;height:38px;border-radius:50%;background:#1e1e28;border:none;color:#e8e8f0;cursor:pointer;font-size:18px;">✕</button>
+      <div style="flex:1;">
+        <div style="font-size:17px;font-weight:600;">Reading view</div>
+        <div style="font-size:12px;color:#5a5a72;margin-top:2px;">Full message · ~${twDur(readSec)} · ${wordCount} words · ${sections.length} section${sections.length===1?'':'s'}</div>
+      </div>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:28px 22px 60px;">
+      ${sections.map((s, i) => `
+        ${i > 0 ? `<div style="height:1px;background:rgba(255,255,255,0.08);margin:28px 0;"></div>` : ''}
+        <div style="font-size:${fontSize}px;line-height:${lineHeight};color:#e8e8f0;font-weight:400;letter-spacing:0.01em;">${twEsc(s)}</div>
+      `).join('')}
+    </div>
+  `;
+
+  document.body.appendChild(el);
+  document.getElementById('tw-rv-close').onclick = () => el.remove();
+}
+
+function twOpen(text) {
+  twText = text;
+  twIdx = 0;
+  twMode = spVal('chunkMode', 'sentence');
+  chunkOpenTime = null;
+  lastChunkIdx = -1;
+  chunkRereadCount = 0;
+  spTrackChunkOpen(0);
+  twDraw();
+}
+
+function twDraw() {
+  document.getElementById('tw-reader')?.remove();
+  const wpm = spGetEffectiveWpm();
+  const fontSize = spVal('fontSize', 20);
+  const lineSpacingMap = { compact: '1.3', normal: '1.65', spacious: '2.1' };
+  const lineHeight = lineSpacingMap[spVal('lineSpacing','normal')] || '1.65';
+  const chunks = twChunk(twText, twMode);
+  const i = Math.min(twIdx, chunks.length-1);
+  const cur = chunks[i] || '';
+  const pct = chunks.length > 0 ? ((i+1)/chunks.length)*100 : 0;
+
+  const el = document.createElement('div');
+  el.id = 'tw-reader';
+  el.style.cssText = 'position:fixed;inset:0;background:#0f0f14;z-index:9999;display:flex;flex-direction:column;font-family:"DM Sans",sans-serif;color:#e8e8f0;';
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;padding:16px 18px;border-bottom:1px solid rgba(255,255,255,0.07);flex-shrink:0;">
+      <button id="tw-close" style="width:38px;height:38px;border-radius:50%;background:#1e1e28;border:none;color:#e8e8f0;cursor:pointer;font-size:18px;">✕</button>
+      <div style="flex:1;">
+        <div style="font-size:17px;font-weight:600;">Show read</div>
+        <div style="font-size:12px;color:#5a5a72;margin-top:2px;">~${twDur(twTime(twText,wpm))} total · ${twSentences(twText).length} sentences</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <span style="font-size:11px;color:#5a5a72;">WPM</span>
+        <input id="tw-wpm" type="number" min="50" max="600" value="${wpm}" style="width:56px;background:#1e1e28;border:1px solid rgba(255,255,255,0.07);border-radius:8px;padding:5px 6px;color:#e8e8f0;font-family:inherit;font-size:13px;text-align:center;outline:none;"/>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;padding:12px 18px;border-bottom:1px solid rgba(255,255,255,0.07);flex-shrink:0;">
+      ${['sentence','pair','paragraph'].map(m=>`<button class="tw-mode" data-m="${m}" style="padding:7px 16px;border-radius:999px;border:none;cursor:pointer;font-family:inherit;font-size:13px;font-weight:500;background:${twMode===m?'#7c6af7':'#1e1e28'};color:${twMode===m?'#fff':'#9090a8'};">${m[0].toUpperCase()+m.slice(1)}</button>`).join('')}
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:24px 22px;">
+      <div style="font-size:${fontSize}px;line-height:${lineHeight};margin-bottom:24px;">${twEsc(cur)}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;">
+        <div style="background:#1e1e28;border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:8px 13px;font-size:12.5px;color:#9090a8;">⏱ ${twDur(twTime(cur,wpm))} for this step</div>
+        <div style="background:#1e1e28;border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:8px 13px;font-size:12.5px;color:#9090a8;">🔤 ${twWords(cur)} words</div>
+      </div>
+    </div>
+    <div style="flex-shrink:0;padding:14px 18px 28px;border-top:1px solid rgba(255,255,255,0.07);background:#17171f;">
+      <div style="height:6px;border-radius:3px;background:#1e1e28;overflow:hidden;margin-bottom:14px;"><div style="width:${pct}%;height:100%;background:#7c6af7;border-radius:3px;"></div></div>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <button id="tw-prev" style="width:54px;height:54px;border-radius:50%;border:none;background:#1e1e28;color:#e8e8f0;font-size:26px;cursor:pointer;opacity:${i===0?0.3:1};" ${i===0?'disabled':''}>‹</button>
+        <span style="flex:1;text-align:center;font-size:13px;color:#5a5a72;">Step ${i+1} of ${chunks.length}</span>
+        <button id="tw-next" style="width:54px;height:54px;border-radius:50%;border:none;background:#7c6af7;color:#fff;font-size:26px;cursor:pointer;opacity:${i>=chunks.length-1?0.3:1};" ${i>=chunks.length-1?'disabled':''}>›</button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(el);
+  document.getElementById('tw-close').onclick = () => {
+    spTrackChunkClose(twWords(cur));
+    el.remove();
+  };
+  document.getElementById('tw-prev').onclick = () => {
+    spTrackChunkClose(twWords(cur));
+    twIdx = Math.max(0,i-1);
+    spTrackChunkOpen(twIdx);
+    twDraw();
+  };
+  document.getElementById('tw-next').onclick = () => {
+    spTrackChunkClose(twWords(cur));
+    twIdx = Math.min(chunks.length-1,i+1);
+    spTrackChunkOpen(twIdx);
+    twDraw();
+  };
+  document.getElementById('tw-wpm').onchange = e => { const v=parseInt(e.target.value); if(v>=50&&v<=600){spSet({wpm:v});twDraw();} };
+  el.querySelectorAll('.tw-mode').forEach(b => { b.onclick = () => { twMode=b.dataset.m; twIdx=0; spSet({chunkMode:twMode}); twDraw(); }; });
+}
+
+// Single document-level listener — survives all re-renders
+document.addEventListener('click', e => {
+  const btn = e.target.closest('.read-btn');
+  if (btn && btn.dataset.txt) {
+    e.stopPropagation();
+    const text = decodeURIComponent(btn.dataset.txt);
+    if (btn.dataset.readview) {
+      openReadingView(text);
+    } else if (btn.dataset.reformat) {
+      openReformatView(text);
+    } else if (btn.dataset.summarise) {
+      openSummariseView(text);
+    } else {
+      twOpen(text);
+    }
+  }
+  // Status icon add button
+  const statusAdd = e.target.closest('.msg-status-add');
+  if (statusAdd) {
+    e.stopPropagation();
+    openStatusIconPicker(statusAdd.dataset.msgid);
+  }
+  // Status chip — tap to change
+  const statusChip = e.target.closest('.msg-status-chip');
+  if (statusChip) {
+    e.stopPropagation();
+    const wrap = statusChip.closest('.msg-status-icons');
+    if (wrap) openStatusIconPicker(wrap.dataset.msgid);
+  }
+});
+
+// Tap on message rows to show delete menu
+document.addEventListener('click', e => {
+  const row = e.target.closest('.msg-row[data-msgid]');
+  if (!row) return;
+  if (e.target.closest('.read-btn') || e.target.closest('button') || e.target.closest('video') || e.target.closest('img')) return;
+  const msgId = row.dataset.msgid;
+  const isOut = row.dataset.isout === 'true';
+  showDeleteMenu(msgId, isOut, e.clientX, e.clientY);
+});
+
+// ── Email Verification ────────────────────────────────────────────────────
+const VERIFY_CUTOFF = new Date('2026-05-05').getTime();
+
+function needsVerification(user) {
+  if (!user || user.emailVerified) return false;
+  const created = user.metadata?.creationTime;
+  if (!created) return false;
+  // Only gate accounts created after this update — existing users unaffected
+  return new Date(created).getTime() > VERIFY_CUTOFF;
+}
+
+function showVerificationGate(user) {
+  document.getElementById('tw-verify-gate')?.remove();
+
+  const el = document.createElement('div');
+  el.id = 'tw-verify-gate';
+  el.style.cssText = 'position:fixed;inset:0;background:#0f0f14;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px;font-family:"DM Sans",sans-serif;color:#e8e8f0;text-align:center;';
+  el.innerHTML = `
+    <div style="font-size:48px;margin-bottom:20px;">✉️</div>
+    <div style="font-size:22px;font-weight:700;margin-bottom:10px;">Check your email</div>
+    <div style="font-size:15px;color:#5a5a72;line-height:1.6;margin-bottom:8px;">We sent a verification link to:</div>
+    <div style="font-size:15px;color:#a78bfa;font-weight:600;margin-bottom:28px;">${user.email}</div>
+    <div style="font-size:13px;color:#5a5a72;line-height:1.6;margin-bottom:32px;max-width:320px;">Click the link in that email, then come back here and tap the button below. You only need to do this once.</div>
+    <button id="tw-verify-check" style="width:100%;max-width:320px;padding:16px;border-radius:14px;border:none;background:#7c6af7;color:#fff;font-family:inherit;font-size:16px;font-weight:600;cursor:pointer;margin-bottom:12px;">I've verified — let me in</button>
+    <button id="tw-verify-resend" style="width:100%;max-width:320px;padding:14px;border-radius:14px;border:none;background:#1e1e28;color:#9090a8;font-family:inherit;font-size:14px;cursor:pointer;margin-bottom:20px;">Resend verification email</button>
+    <button id="tw-verify-signout" style="background:none;border:none;color:#3a3a52;font-family:inherit;font-size:13px;cursor:pointer;">Sign out and use a different account</button>
+  `;
+  document.body.appendChild(el);
+
+  let resendCooldown = false;
+
+  document.getElementById('tw-verify-check').onclick = async () => {
+    const btn = document.getElementById('tw-verify-check');
+    btn.textContent = 'Checking…';
+    btn.disabled = true;
+    try {
+      // Force reload from Firebase servers — not local cache
+      await auth.currentUser.reload();
+      const freshUser = auth.currentUser;
+      // Double check — must be explicitly true, not just truthy
+      if (freshUser && freshUser.emailVerified === true) {
+        el.remove();
+        currentUser = freshUser;
+        showToast('Email verified ✓ Welcome to Threadwise!');
+        render();
+      } else {
+        // Not verified — tell them clearly and re-enable
+        btn.textContent = 'Not verified yet — check your email';
+        btn.disabled = false;
+        setTimeout(() => {
+          if (document.getElementById('tw-verify-check')) {
+            btn.textContent = 'I\'ve verified — let me in';
+          }
+        }, 3000);
+      }
+    } catch(e) {
+      // Reload failed — do not let them in
+      btn.textContent = 'Could not check — try again';
+      btn.disabled = false;
+      console.error('Verification check failed:', e);
+    }
+  };
+
+  document.getElementById('tw-verify-resend').onclick = async () => {
+    if (resendCooldown) { showToast('Please wait 60 seconds before resending'); return; }
+    resendCooldown = true;
+    const btn = document.getElementById('tw-verify-resend');
+    btn.textContent = 'Sent — check your inbox';
+    setTimeout(() => {
+      resendCooldown = false;
+      if (btn) btn.textContent = 'Resend verification email';
+    }, 60000);
+    try {
+      await sendEmailVerification(auth.currentUser, {
+        url: 'https://threadwise-8b8f5.web.app'
+      });
+      showToast('Verification email sent ✓');
+    } catch(e) { showToast('Could not resend: ' + e.message); }
+  };
+
+  document.getElementById('tw-verify-signout').onclick = async () => {
+    el.remove();
+    await signOut(auth);
+  };
+}
+
+// ── Notifications ─────────────────────────────────────────────────────────
+let twMessaging = null;
+
+async function setupNotifications(messaging) {
+  twMessaging = messaging;
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    const token = await getToken(messaging, {
+      vapidKey: 'BIEgp_hg2iNG2OcDlWVe2ardBKDHu7RWhDdv2TXQkWYsWBuVL0nRw8mmkYMukyijRXShb9b1ZjA6yOCLBFIdjUU',
+      serviceWorkerRegistration: reg
+    });
+    if (token && currentUser) {
+      await updateDoc(doc(db, 'users', currentUser.uid), { fcmToken: token });
+    }
+    onMessage(messaging, payload => {
+      if (localStorage.getItem('tw_notif') !== 'enabled') return;
+      showToast('💬 ' + (payload.notification?.title || 'New message'));
+    });
+  } catch(e) { console.log('Notification setup failed:', e); }
+}
+
+async function askNotificationPermission() {
+  document.getElementById('tw-notif-prompt')?.remove();
+  const el = document.createElement('div');
+  el.id = 'tw-notif-prompt';
+  el.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:flex-end;font-family:"DM Sans",sans-serif;';
+  el.innerHTML = `
+    <div style="background:#17171f;border-radius:20px 20px 0 0;padding:28px 20px 40px;width:100%;box-sizing:border-box;">
+      <div style="font-size:32px;text-align:center;margin-bottom:12px;">🔔</div>
+      <div style="font-size:18px;font-weight:600;color:#e8e8f0;text-align:center;margin-bottom:8px;">Stay in the loop</div>
+      <div style="font-size:14px;color:#5a5a72;text-align:center;line-height:1.6;margin-bottom:24px;">Get notified when someone sends you a message or photo. You can turn this off any time in your profile settings.</div>
+      <div style="font-size:12px;color:#3a3a52;text-align:center;margin-bottom:20px;">No spam. Only messages from people you're already talking to.</div>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <button id="tw-notif-yes" style="padding:15px;border-radius:14px;border:none;background:#7c6af7;color:#fff;font-family:inherit;font-size:15px;font-weight:600;cursor:pointer;">Yes, notify me</button>
+        <button id="tw-notif-no" style="padding:15px;border-radius:14px;border:none;background:#1e1e28;color:#9090a8;font-family:inherit;font-size:15px;cursor:pointer;">Not right now</button>
+        <button id="tw-notif-never" style="padding:10px;border-radius:14px;border:none;background:none;color:#3a3a52;font-family:inherit;font-size:13px;cursor:pointer;">Never ask again</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+
+  document.getElementById('tw-notif-yes').onclick = async () => {
+    el.remove();
+    const permission = await Notification.requestPermission();
+    if (permission === 'granted') {
+      localStorage.setItem('tw_notif', 'enabled');
+      const messaging = getMessaging(app);
+      await setupNotifications(messaging);
+      showToast('Notifications on ✓');
+      render();
+    } else {
+      showToast('Permission denied — enable in browser settings');
+    }
+  };
+  document.getElementById('tw-notif-no').onclick = () => { el.remove(); localStorage.setItem('tw_notif', 'later'); };
+  document.getElementById('tw-notif-never').onclick = () => { el.remove(); localStorage.setItem('tw_notif', 'never'); };
+}
+
+// ── Icon & Feelings System ────────────────────────────────────────────────
+
+const FEELING_CATEGORIES = {
+  'How I feel': [
+    { id: 'happy',       icon: '😊', label: 'Happy',       color: '#fbbf24', metaphor: 'like warm sunshine' },
+    { id: 'calm',        icon: '😌', label: 'Calm',        color: '#34d399', metaphor: 'like still water' },
+    { id: 'tired',       icon: '😴', label: 'Tired',       color: '#818cf8', metaphor: 'like heavy clouds' },
+    { id: 'overwhelmed', icon: '😵', label: 'Overwhelmed', color: '#f87171', metaphor: 'like a storm inside' },
+    { id: 'anxious',     icon: '😰', label: 'Anxious',     color: '#fb923c', metaphor: 'like waiting for thunder' },
+    { id: 'sad',         icon: '😔', label: 'Sad',         color: '#60a5fa', metaphor: 'like rain on a window' },
+    { id: 'angry',       icon: '😠', label: 'Angry',       color: '#ef4444', metaphor: 'like a kettle boiling' },
+    { id: 'confused',    icon: '😕', label: 'Confused',    color: '#a78bfa', metaphor: 'like fog on a road' },
+    { id: 'focused',     icon: '🧠', label: 'Focused',     color: '#2dd4bf', metaphor: 'like a clear lens' },
+    { id: 'excited',     icon: '🤩', label: 'Excited',     color: '#f59e0b', metaphor: 'like fizzing bubbles' },
+    { id: 'shutdown',    icon: '🪨', label: 'Shutdown',    color: '#6b7280', metaphor: 'like a frozen screen' },
+    { id: 'ok',          icon: '😐', label: 'Just OK',     color: '#9ca3af', metaphor: 'like grey sky, not stormy' },
+  ],
+  'Activities': [
+    { id: 'eating',    icon: '🍽️', label: 'Eating',     color: '#f59e0b' },
+    { id: 'sleeping',  icon: '🛏️', label: 'Sleeping',   color: '#818cf8' },
+    { id: 'walking',   icon: '🚶', label: 'Walking',    color: '#34d399' },
+    { id: 'working',   icon: '💼', label: 'Working',    color: '#60a5fa' },
+    { id: 'gaming',    icon: '🎮', label: 'Gaming',     color: '#a78bfa' },
+    { id: 'reading',   icon: '📖', label: 'Reading',    color: '#f97316' },
+    { id: 'music',     icon: '🎵', label: 'Music',      color: '#ec4899' },
+    { id: 'outside',   icon: '🌿', label: 'Outside',    color: '#22c55e' },
+    { id: 'resting',   icon: '🛋️', label: 'Resting',   color: '#8b5cf6' },
+    { id: 'busy',      icon: '⚡', label: 'Busy',       color: '#fbbf24' },
+    { id: 'free',      icon: '🌊', label: 'Free time',  color: '#38bdf8' },
+    { id: 'travel',    icon: '🚌', label: 'Travelling', color: '#f59e0b' },
+  ],
+  'Interests': [
+    { id: 'nature',    icon: '🌱', label: 'Nature',     color: '#22c55e' },
+    { id: 'art',       icon: '🎨', label: 'Art',        color: '#ec4899' },
+    { id: 'animals',   icon: '🐾', label: 'Animals',    color: '#f59e0b' },
+    { id: 'space',     icon: '🌌', label: 'Space',      color: '#818cf8' },
+    { id: 'tech',      icon: '💻', label: 'Tech',       color: '#38bdf8' },
+    { id: 'cooking',   icon: '🍳', label: 'Cooking',    color: '#f97316' },
+    { id: 'sport',     icon: '⚽', label: 'Sport',      color: '#22c55e' },
+    { id: 'film',      icon: '🎬', label: 'Film',       color: '#a78bfa' },
+    { id: 'writing',   icon: '✍️', label: 'Writing',   color: '#60a5fa' },
+    { id: 'pokemon',   icon: '⭐', label: 'Pokémon',    color: '#fbbf24' },
+  ],
+  'Processing': [
+    { id: 'reading_it',   icon: '👁️',  label: 'Still reading',      color: '#60a5fa' },
+    { id: 'processing',   icon: '⏳',  label: 'Still processing',    color: '#a78bfa' },
+    { id: 'understood',   icon: '✅',  label: 'I understand',        color: '#34d399' },
+    { id: 'need_time',    icon: '🕐',  label: 'Need more time',      color: '#f59e0b' },
+    { id: 'break_down',   icon: '🔍',  label: 'Can you break down',  color: '#fb923c' },
+    { id: 'not_yet',      icon: '🌫️', label: 'Not ready yet',       color: '#9ca3af' },
+    { id: 'got_it',       icon: '👍',  label: 'Got it',              color: '#34d399' },
+    { id: 'overwhelmed_m',icon: '🌊',  label: 'Too much right now',  color: '#f87171' },
+  ]
+};
+
+// Intensity shades for feelings
+const INTENSITY_SHADES = [
+  { label: 'A little', opacity: 0.4 },
+  { label: 'Somewhat', opacity: 0.65 },
+  { label: 'Quite',    opacity: 0.85 },
+  { label: 'Very',     opacity: 1.0 },
+];
+
+const PROCESSING_STATUS_ICONS = {
+  reading_it:    '👁️',
+  processing:    '⏳',
+  understood:    '✅',
+  need_time:     '🕐',
+  break_down:    '🔍',
+  not_yet:       '🌫️',
+  got_it:        '👍',
+  overwhelmed_m: '🌊',
+};
+
+function getStatusIcon(id) {
+  return PROCESSING_STATUS_ICONS[id] || '💭';
+}
+
+// Load custom icons from Firestore
+let customIcons = [];
+async function loadCustomIcons() {
+  if (!currentUser) return;
+  try {
+    const snap = await getDoc(doc(db, 'users', currentUser.uid));
+    customIcons = snap.data()?.customIcons || [];
+  } catch(e) {}
+}
+
+async function saveCustomIcon(icon) {
+  if (!currentUser) return;
+  customIcons.push(icon);
+  try {
+    await updateDoc(doc(db, 'users', currentUser.uid), { customIcons });
+  } catch(e) {}
+}
+
+function openIconPanel() {
+  document.getElementById('tw-icon-panel')?.remove();
+  document.querySelector('.tw-icon-bg')?.remove();
+
+  const bg = document.createElement('div');
+  bg.className = 'tw-icon-bg';
+  bg.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9980;';
+  document.body.appendChild(bg);
+
+  const el = document.createElement('div');
+  el.id = 'tw-icon-panel';
+  el.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#17171f;border-radius:20px 20px 0 0;z-index:9981;font-family:"DM Sans",sans-serif;color:#e8e8f0;max-height:80vh;display:flex;flex-direction:column;';
+
+  const cats = Object.keys(FEELING_CATEGORIES);
+  let activeCategory = cats[0];
+  let selectedIcon = null;
+  let selectedIntensity = 3; // default Very
+
+  function renderPanel() {
+    const icons = [
+      ...FEELING_CATEGORIES[activeCategory],
+      ...(activeCategory === 'How I feel' ? customIcons : [])
+    ];
+    const isFeeling = activeCategory === 'How I feel';
+
+    el.innerHTML = `
+      <div style="width:36px;height:4px;background:#2a2a38;border-radius:2px;margin:12px auto 0;"></div>
+      <div style="padding:14px 18px 0;">
+        <div style="font-size:17px;font-weight:600;margin-bottom:12px;">Send an icon</div>
+        <div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:8px;scrollbar-width:none;">
+          ${cats.map(c => `
+            <button class="ip-cat ${activeCategory===c?'active':''}" data-cat="${c}"
+              style="padding:6px 14px;border-radius:999px;border:none;cursor:pointer;font-family:inherit;font-size:12px;font-weight:500;white-space:nowrap;background:${activeCategory===c?'var(--accent)':'#1e1e28'};color:${activeCategory===c?'#fff':'#9090a8'};">
+              ${c}
+            </button>
+          `).join('')}
+        </div>
+      </div>
+
+      <div style="flex:1;overflow-y:auto;padding:12px 18px;">
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;">
+          ${icons.map(icon => `
+            <button class="ip-icon ${selectedIcon?.id===icon.id?'selected':''}" data-id="${icon.id}"
+              style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 4px;border-radius:14px;border:2px solid ${selectedIcon?.id===icon.id?'var(--accent)':'transparent'};background:${selectedIcon?.id===icon.id?'rgba(124,106,247,0.15)':'#1e1e28'};cursor:pointer;">
+              <span style="font-size:28px;line-height:1;">${icon.icon}</span>
+              <span style="font-size:10px;color:#9090a8;text-align:center;line-height:1.2;">${icon.label}</span>
+              ${icon.color ? `<div style="width:20px;height:3px;border-radius:2px;background:${icon.color};opacity:0.7;"></div>` : ''}
+            </button>
+          `).join('')}
+          ${activeCategory === 'How I feel' ? `
+            <button id="ip-add-custom"
+              style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 4px;border-radius:14px;border:2px dashed #2a2a38;background:transparent;cursor:pointer;">
+              <span style="font-size:28px;line-height:1;">➕</span>
+              <span style="font-size:10px;color:#5a5a72;text-align:center;">Add my own</span>
+            </button>
+          ` : ''}
+        </div>
+
+        ${isFeeling && selectedIcon ? `
+          <div style="background:#1a1a24;border-radius:14px;padding:14px;margin-bottom:12px;">
+            <div style="font-size:12px;color:#5a5a72;margin-bottom:10px;font-weight:600;">HOW MUCH?</div>
+            <div style="display:flex;gap:8px;">
+              ${INTENSITY_SHADES.map((s, i) => `
+                <button class="ip-intensity ${selectedIntensity===i?'active':''}" data-intensity="${i}"
+                  style="flex:1;padding:8px 4px;border-radius:10px;border:1.5px solid ${selectedIntensity===i?'var(--accent)':'transparent'};background:${selectedIntensity===i?'rgba(124,106,247,0.15)':'#1e1e28'};cursor:pointer;">
+                  <div style="font-size:18px;opacity:${s.opacity};">${selectedIcon.icon}</div>
+                  <div style="font-size:10px;color:#9090a8;margin-top:3px;">${s.label}</div>
+                </button>
+              `).join('')}
+            </div>
+            ${selectedIcon.metaphor ? `
+              <div style="font-size:12px;color:#5a5a72;margin-top:10px;font-style:italic;">Like ${selectedIcon.metaphor}</div>
+            ` : ''}
+          </div>
+        ` : ''}
+      </div>
+
+      <div style="padding:14px 18px 32px;border-top:1px solid rgba(255,255,255,0.07);display:flex;gap:10px;">
+        <button id="ip-cancel" style="flex:1;padding:13px;border-radius:12px;border:none;background:#1e1e28;color:#e8e8f0;font-family:inherit;font-size:14px;cursor:pointer;">Cancel</button>
+        <button id="ip-send" ${!selectedIcon?'disabled':''} style="flex:2;padding:13px;border-radius:12px;border:none;background:${selectedIcon?'var(--accent)':'#1e1e28'};color:${selectedIcon?'#fff':'#5a5a72'};font-family:inherit;font-size:15px;font-weight:600;cursor:pointer;">
+          ${selectedIcon ? `Send ${selectedIcon.icon}` : 'Pick an icon'}
+        </button>
+      </div>
+    `;
+
+    // Bind category tabs
+    el.querySelectorAll('.ip-cat').forEach(btn => {
+      btn.onclick = () => { activeCategory = btn.dataset.cat; selectedIcon = null; renderPanel(); };
+    });
+
+    // Bind icon selection
+    el.querySelectorAll('.ip-icon').forEach(btn => {
+      btn.onclick = () => {
+        const all = [...FEELING_CATEGORIES[activeCategory], ...customIcons];
+        selectedIcon = all.find(ic => ic.id === btn.dataset.id);
+        renderPanel();
+      };
+    });
+
+    // Bind intensity
+    el.querySelectorAll('.ip-intensity').forEach(btn => {
+      btn.onclick = () => { selectedIntensity = parseInt(btn.dataset.intensity); renderPanel(); };
+    });
+
+    // Add custom icon
+    document.getElementById('ip-add-custom')?.addEventListener('click', () => openAddCustomIcon(() => { loadCustomIcons().then(() => renderPanel()); }));
+
+    // Cancel
+    document.getElementById('ip-cancel').onclick = () => { el.remove(); bg.remove(); };
+    bg.onclick = () => { el.remove(); bg.remove(); };
+
+    // Send
+    document.getElementById('ip-send').onclick = async () => {
+      if (!selectedIcon) return;
+      el.remove(); bg.remove();
+      const intensityLabel = isFeeling ? INTENSITY_SHADES[selectedIntensity].label + ' ' : '';
+      const metaphor = isFeeling && selectedIcon.metaphor ? ` — ${INTENSITY_SHADES[selectedIntensity].label.toLowerCase()} like ${selectedIcon.metaphor}` : '';
+      const msgText = `${selectedIcon.icon} ${intensityLabel}${selectedIcon.label}${metaphor}`;
+      await sendIconMessage(msgText, selectedIcon.color || null);
+    };
+  }
+
+  document.body.appendChild(el);
+  loadCustomIcons().then(() => renderPanel());
+}
+
+function openAddCustomIcon(onSave) {
+  document.getElementById('tw-custom-icon')?.remove();
+
+  const el = document.createElement('div');
+  el.id = 'tw-custom-icon';
+  el.style.cssText = 'position:fixed;inset:0;background:#0f0f14;z-index:9985;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px;font-family:"DM Sans",sans-serif;color:#e8e8f0;';
+  el.innerHTML = `
+    <div style="font-size:20px;font-weight:600;margin-bottom:24px;">Create your own feeling</div>
+    <div style="width:100%;max-width:320px;display:flex;flex-direction:column;gap:14px;">
+      <div>
+        <div style="font-size:12px;color:#5a5a72;margin-bottom:6px;">EMOJI OR SYMBOL</div>
+        <input id="ci-icon" maxlength="4" placeholder="e.g. 🌀" style="width:100%;background:#1e1e28;border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:12px;color:#e8e8f0;font-family:inherit;font-size:24px;text-align:center;outline:none;box-sizing:border-box;" />
+      </div>
+      <div>
+        <div style="font-size:12px;color:#5a5a72;margin-bottom:6px;">LABEL</div>
+        <input id="ci-label" maxlength="20" placeholder="e.g. Scattered" style="width:100%;background:#1e1e28;border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:12px;color:#e8e8f0;font-family:inherit;font-size:15px;outline:none;box-sizing:border-box;" />
+      </div>
+      <div>
+        <div style="font-size:12px;color:#5a5a72;margin-bottom:6px;">METAPHOR (optional)</div>
+        <input id="ci-metaphor" maxlength="40" placeholder="e.g. like a spinning top" style="width:100%;background:#1e1e28;border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:12px;color:#e8e8f0;font-family:inherit;font-size:14px;outline:none;box-sizing:border-box;" />
+      </div>
+      <div style="display:flex;gap:10px;margin-top:8px;">
+        <button id="ci-cancel" style="flex:1;padding:13px;border-radius:12px;border:none;background:#1e1e28;color:#e8e8f0;font-family:inherit;font-size:14px;cursor:pointer;">Cancel</button>
+        <button id="ci-save" style="flex:2;padding:13px;border-radius:12px;border:none;background:var(--accent);color:#fff;font-family:inherit;font-size:15px;font-weight:600;cursor:pointer;">Save</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(el);
+
+  document.getElementById('ci-cancel').onclick = () => el.remove();
+  document.getElementById('ci-save').onclick = async () => {
+    const icon = document.getElementById('ci-icon')?.value.trim();
+    const label = document.getElementById('ci-label')?.value.trim();
+    const metaphor = document.getElementById('ci-metaphor')?.value.trim();
+    if (!icon || !label) { showToast('Add an icon and label'); return; }
+    await saveCustomIcon({ id: 'custom_' + Date.now(), icon, label, metaphor, color: '#a78bfa' });
+    el.remove();
+    onSave();
+  };
+}
+
+async function sendIconMessage(text, color) {
+  if (!activeConvoId || !currentUser) return;
+  const convo = conversations.find(c => c.id === activeConvoId);
+  const otherUid = convo?.participants?.find(u => u !== currentUser.uid);
+  try {
+    await addDoc(collection(db, 'conversations', activeConvoId, 'messages'), {
+      text,
+      iconColor: color || null,
+      isIcon: true,
+      senderId: currentUser.uid,
+      senderName: currentUser.displayName || currentUser.email,
+      createdAt: serverTimestamp(),
+      read: false
+    });
+    await updateDoc(doc(db, 'conversations', activeConvoId), {
+      lastMessage: text,
+      lastMessageAt: serverTimestamp(),
+      ...(otherUid ? { [`unreadCounts.${otherUid}`]: increment(1) } : {})
+    });
+  } catch(e) { showToast('Could not send: ' + e.message); }
+}
+
+function openStatusIconPicker(msgId) {
+  document.getElementById('tw-status-picker')?.remove();
+  document.querySelector('.tw-status-bg')?.remove();
+
+  const bg = document.createElement('div');
+  bg.className = 'tw-status-bg';
+  bg.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:9975;';
+  document.body.appendChild(bg);
+
+  const el = document.createElement('div');
+  el.id = 'tw-status-picker';
+  el.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#17171f;border-radius:20px 20px 0 0;padding:20px 18px 36px;z-index:9976;font-family:"DM Sans",sans-serif;color:#e8e8f0;';
+
+  const statuses = FEELING_CATEGORIES['Processing'];
+  el.innerHTML = `
+    <div style="width:36px;height:4px;background:#2a2a38;border-radius:2px;margin:0 auto 16px;"></div>
+    <div style="font-size:16px;font-weight:600;margin-bottom:14px;">How are you with this message?</div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
+      ${statuses.map(s => `
+        <button class="sp-status-btn" data-id="${s.id}"
+          style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 4px;border-radius:14px;border:none;background:#1e1e28;cursor:pointer;">
+          <span style="font-size:26px;">${s.icon}</span>
+          <span style="font-size:10px;color:#9090a8;text-align:center;line-height:1.2;">${s.label}</span>
+        </button>
+      `).join('')}
+    </div>
+    <button id="sp-cancel" style="width:100%;margin-top:14px;padding:12px;border-radius:12px;border:none;background:#1e1e28;color:#9090a8;font-family:inherit;font-size:14px;cursor:pointer;">Cancel</button>
+  `;
+  document.body.appendChild(el);
+
+  const close = () => { el.remove(); bg.remove(); };
+  bg.onclick = close;
+  document.getElementById('sp-cancel').onclick = close;
+
+  el.querySelectorAll('.sp-status-btn').forEach(btn => {
+    btn.onclick = async () => {
+      close();
+      try {
+        await updateDoc(doc(db, 'conversations', activeConvoId, 'messages', msgId), {
+          [`statusIcons.${currentUser.uid}`]: btn.dataset.id
+        });
+      } catch(e) { showToast('Could not save status'); }
+    };
+  });
+}
+
+// Text reformat — splits into visible sections
+function openReformatView(text) {
+  document.getElementById('tw-reformat-view')?.remove();
+  const sections = twSentences(text);
+  const el = document.createElement('div');
+  el.id = 'tw-reformat-view';
+  el.style.cssText = 'position:fixed;inset:0;background:#0a0a10;z-index:9998;display:flex;flex-direction:column;font-family:"DM Sans",sans-serif;color:#e8e8f0;';
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;padding:16px 18px;border-bottom:1px solid rgba(255,255,255,0.07);flex-shrink:0;">
+      <button id="tw-rf-close" style="width:38px;height:38px;border-radius:50%;background:#1e1e28;border:none;color:#e8e8f0;cursor:pointer;font-size:18px;">✕</button>
+      <div>
+        <div style="font-size:17px;font-weight:600;">Reformatted</div>
+        <div style="font-size:12px;color:#5a5a72;margin-top:2px;">${sections.length} chunks — all visible at once</div>
+      </div>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:20px 18px;display:flex;flex-direction:column;gap:12px;">
+      ${sections.map((s, i) => `
+        <div style="background:#1a1a24;border-radius:14px;padding:14px 16px;border-left:3px solid rgba(124,106,247,${0.3 + (i/sections.length)*0.7});">
+          <div style="font-size:11px;color:#5a5a72;margin-bottom:6px;font-weight:600;">${i+1} of ${sections.length}</div>
+          <div style="font-size:17px;line-height:1.7;color:#e8e8f0;">${twEsc(s)}</div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+  document.body.appendChild(el);
+  document.getElementById('tw-rf-close').onclick = () => el.remove();
+}
+
+// Text summarise — AI-powered via Claude
+async function openSummariseView(text) {
+  document.getElementById('tw-sum-view')?.remove();
+  const el = document.createElement('div');
+  el.id = 'tw-sum-view';
+  el.style.cssText = 'position:fixed;inset:0;background:#0a0a10;z-index:9998;display:flex;flex-direction:column;font-family:"DM Sans",sans-serif;color:#e8e8f0;';
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;padding:16px 18px;border-bottom:1px solid rgba(255,255,255,0.07);flex-shrink:0;">
+      <button id="tw-sum-close" style="width:38px;height:38px;border-radius:50%;background:#1e1e28;border:none;color:#e8e8f0;cursor:pointer;font-size:18px;">✕</button>
+      <div style="font-size:17px;font-weight:600;">Summary</div>
+    </div>
+    <div id="tw-sum-body" style="flex:1;overflow-y:auto;padding:24px 22px;display:flex;align-items:center;justify-content:center;">
+      <div style="font-size:14px;color:#5a5a72;">Summarising…</div>
+    </div>
+  `;
+  document.body.appendChild(el);
+  document.getElementById('tw-sum-close').onclick = () => el.remove();
+
+  // Split into chunks preserving detail
+  const sentences = twSentences(text);
+  const chunks = [];
+  for (let i = 0; i < sentences.length; i += 3) {
+    chunks.push(sentences.slice(i, i+3).join(' '));
+  }
+
+  const body = document.getElementById('tw-sum-body');
+  if (body) {
+    body.style.alignItems = 'flex-start';
+    body.style.justifyContent = 'flex-start';
+    body.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:14px;width:100%;">
+        <div style="font-size:13px;color:#5a5a72;margin-bottom:4px;">Same detail, shorter chunks:</div>
+        ${chunks.map((c, i) => `
+          <div style="background:#1a1a24;border-radius:14px;padding:14px 16px;">
+            <div style="font-size:11px;color:#5a5a72;margin-bottom:6px;font-weight:600;">PART ${i+1}</div>
+            <div style="font-size:16px;line-height:1.65;color:#e8e8f0;">${twEsc(c)}</div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+}
+
+// ── Online / Offline indicator ────────────────────────────────────────────
+function updateOnlineIndicator(isOnline) {
+  document.getElementById('tw-offline-banner')?.remove();
+  if (!isOnline) {
+    const banner = document.createElement('div');
+    banner.id = 'tw-offline-banner';
+    banner.className = 'offline-banner';
+    banner.innerHTML = `
+      <span>📡</span>
+      <span style="flex:1;">You're offline — messages will send when you reconnect</span>
+    `;
+    document.body.appendChild(banner);
+  } else {
+    // Show brief "syncing" banner then remove
+    const banner = document.createElement('div');
+    banner.id = 'tw-offline-banner';
+    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#0d2a1f;border-bottom:1px solid rgba(52,211,153,0.3);padding:8px 16px;display:flex;align-items:center;gap:8px;z-index:7777;font-size:13px;color:#34d399;font-family:var(--font);';
+    banner.innerHTML = `<span>🔄</span><span>Back online — syncing messages…</span>`;
+    document.body.appendChild(banner);
+    setTimeout(() => banner.remove(), 3000);
+  }
+}
+
+// ── Abuse Reporting ───────────────────────────────────────────────────────
+function openAbuseReport(msgId, senderId, senderName) {
+  document.getElementById('tw-abuse-overlay')?.remove();
+  document.querySelector('.tw-abuse-bg')?.remove();
+
+  const bg = document.createElement('div');
+  bg.className = 'tw-abuse-bg';
+  bg.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9990;';
+  document.body.appendChild(bg);
+
+  const el = document.createElement('div');
+  el.id = 'tw-abuse-overlay';
+  el.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#17171f;border-radius:20px 20px 0 0;padding:24px 18px 40px;z-index:9991;font-family:"DM Sans",sans-serif;color:#e8e8f0;';
+
+  const reasons = [
+    'Harassment or bullying',
+    'Threats or violence',
+    'Spam or unwanted messages',
+    'Sharing inappropriate content',
+    'Impersonation',
+    'Other'
+  ];
+
+  el.innerHTML = `
+    <div style="width:36px;height:4px;background:#2a2a38;border-radius:2px;margin:0 auto 20px;"></div>
+    <div style="font-size:18px;font-weight:600;margin-bottom:6px;">Report message</div>
+    <div style="font-size:13px;color:#5a5a72;margin-bottom:20px;">This report is confidential. Choose a reason:</div>
+    <div id="tw-abuse-reasons" style="display:flex;flex-direction:column;gap:8px;margin-bottom:20px;">
+      ${reasons.map((r, i) => `
+        <label style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:#1e1e28;border-radius:12px;cursor:pointer;border:1.5px solid transparent;" id="abuse-opt-${i}">
+          <input type="radio" name="abuse-reason" value="${r}" style="accent-color:#7c6af7;width:18px;height:18px;" />
+          <span style="font-size:14px;">${r}</span>
+        </label>
+      `).join('')}
+    </div>
+    <div style="font-size:12px;color:#5a5a72;margin-bottom:8px;">Additional details (optional)</div>
+    <textarea id="tw-abuse-details" placeholder="Any other details…" style="width:100%;background:#1e1e28;border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:12px;color:#e8e8f0;font-family:inherit;font-size:14px;resize:none;outline:none;min-height:72px;box-sizing:border-box;margin-bottom:16px;"></textarea>
+    <div style="display:flex;gap:10px;">
+      <button id="tw-abuse-cancel" style="flex:1;padding:14px;border-radius:12px;border:none;background:#1e1e28;color:#e8e8f0;font-family:inherit;font-size:14px;cursor:pointer;">Cancel</button>
+      <button id="tw-abuse-submit" style="flex:2;padding:14px;border-radius:12px;border:none;background:#f87171;color:#fff;font-family:inherit;font-size:15px;font-weight:600;cursor:pointer;">Submit report</button>
+    </div>
+  `;
+
+  document.body.appendChild(el);
+
+  const close = () => { el.remove(); bg.remove(); };
+  bg.onclick = close;
+  document.getElementById('tw-abuse-cancel').onclick = close;
+
+  // Highlight selected reason
+  el.querySelectorAll('input[name="abuse-reason"]').forEach(input => {
+    input.addEventListener('change', () => {
+      el.querySelectorAll('label[id^="abuse-opt-"]').forEach(l => l.style.borderColor = 'transparent');
+      input.closest('label').style.borderColor = '#7c6af7';
+    });
+  });
+
+  document.getElementById('tw-abuse-submit').onclick = async () => {
+    const reason = el.querySelector('input[name="abuse-reason"]:checked')?.value;
+    if (!reason) { showToast('Please select a reason'); return; }
+
+    const details = document.getElementById('tw-abuse-details')?.value.trim() || '';
+    const btn = document.getElementById('tw-abuse-submit');
+    btn.textContent = 'Submitting…';
+    btn.disabled = true;
+
+    try {
+      await addDoc(collection(db, 'reports'), {
+        reportedBy: currentUser.uid,
+        reportedUser: senderId,
+        reportedUserName: senderName || 'Unknown',
+        messageId: msgId,
+        conversationId: activeConvoId,
+        reason,
+        details: details.slice(0, 500),
+        createdAt: serverTimestamp(),
+        status: 'pending'
+      });
+      close();
+      showToast('Report submitted — thank you');
+    } catch(e) {
+      showToast('Could not submit report. Try again.');
+      btn.textContent = 'Submit report';
+      btn.disabled = false;
+    }
+  };
+}
+
+// ── Deep-link / shortcut / notification handler ──────────────────────────
+// Runs after auth resolves — reads URL params set by shortcuts or notif taps
+function handleDeepLink() {
+  const params = new URLSearchParams(window.location.search);
+  const action  = params.get('action');
+  const convoId = params.get('convo');
+
+  if (convoId) {
+    // Opened from a notification — jump straight to that convo
+    const convo = conversations.find(c => c.id === convoId);
+    if (convo) openConvo(convoId);
+    return;
+  }
+  if (action === 'new-chat') {
+    showNewChat = true; render();
+  } else if (action === 'self-thread') {
+    openSelfThread();
+  }
+}
+
+// ── Background Sync registration helper ───────────────────────────────────
+async function registerBackgroundSync() {
+  if (!('serviceWorker' in navigator) || !('SyncManager' in window)) return;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    await reg.sync.register('tw-message-sync');
+  } catch(e) { /* not supported — queue flush handles it instead */ }
+}
+
+// ── Listen for messages from the service worker ───────────────────────────
+navigator.serviceWorker?.addEventListener('message', event => {
+  if (event.data?.type === 'SYNC_FLUSH') {
+    flushOfflineQueue();
+  } else if (event.data?.type === 'OPEN_CONVO' && event.data.convoId) {
+    const convo = conversations.find(c => c.id === event.data.convoId);
+    if (convo) openConvo(event.data.convoId);
+  }
+});
+
+// ── Boot ──────────────────────────────────────────────────────────────────
+// Check initial online status
+if (!navigator.onLine) updateOnlineIndicator(false);
+if (!CONFIG_FILLED) {
+  render();
+} else {
+  initFirebase();
+
+  // Presence on window events
+  // Only mark offline on actual unload (tab close / navigation away),
+  // not on visibility change — backgrounding a PWA is not the same as leaving.
+  window.addEventListener('beforeunload', () => setPresence(false));
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && currentUser) {
+      // Coming back to foreground — re-assert online
+      setPresence(true);
+    }
+    // Do NOT set offline on hidden — app may just be backgrounded on mobile
+  });
+  // Also re-assert presence when the page regains focus
+  window.addEventListener('focus', () => {
+    if (currentUser) setPresence(true);
+  });
+
+  onAuthStateChanged(auth, async (user) => {
+    if (user) {
+      currentUser = user;
+
+      // Save user to localStorage so we can load offline
+      try {
+        localStorage.setItem('tw_user', JSON.stringify({
+          uid: user.uid,
+          displayName: user.displayName,
+          email: user.email,
+          emailVerified: user.emailVerified
+        }));
+      } catch(e) {}
+
+      // Show verification gate for new unverified users
+      if (needsVerification(user)) {
+        showVerificationGate(user);
+        return;
+      }
+
+      // Restore last open convo so force-close doesn't reset navigation
+      sessionRestore();
+
+      // Load from localStorage cache immediately — works offline
+      loadConversationsFromCache();
+
+      // Pre-load cached messages for the restored convo so UI shows instantly
+      if (activeConvoId) {
+        try {
+          const raw = localStorage.getItem('tw_msgs_' + activeConvoId);
+          if (raw) {
+            messages = JSON.parse(raw).map(m => ({
+              ...m,
+              createdAt: m.createdAt ? { toMillis: () => m.createdAt, toDate: () => new Date(m.createdAt) } : null
+            }));
+          }
+        } catch(e) {}
+      }
+
+      render();
+
+      // Restore live subscription for the open convo
+      if (activeConvoId && navigator.onLine) subscribeMessages(activeConvoId);
+
+      // Then try Firestore — only if online
+      if (navigator.onLine) {
+        try {
+          const userDoc = await getDoc(doc(db, 'users', user.uid));
+          if (!userDoc.exists()) {
+            await setDoc(doc(db, 'users', user.uid), {
+              uid: user.uid,
+              displayName: user.displayName || user.email,
+              email: user.email,
+              createdAt: serverTimestamp(),
+              online: true,
+              lastSeen: serverTimestamp()
+            });
+          } else {
+            await updateDoc(doc(db, 'users', user.uid), { online: true, lastSeen: serverTimestamp() });
+          }
+        } catch(e) {}
+      }
+
+      subscribeConversations();
+      flushOfflineQueue();
+      registerBackgroundSync();
+      setTimeout(handleDeepLink, 400); // wait for convos to load first
+
+      const notifPref = localStorage.getItem('tw_notif');
+      if (!notifPref || notifPref === 'later') {
+        setTimeout(() => askNotificationPermission(), 3000);
+      }
+    } else {
+      // Auth returned null — check if we have a cached user for offline mode
+      const cachedUser = (() => { try { return JSON.parse(localStorage.getItem('tw_user')); } catch { return null; } })();
+      if (cachedUser && !navigator.onLine) {
+        // Offline with cached user — load from cache without full auth
+        currentUser = cachedUser;
+        loadConversationsFromCache();
+        render();
+        return;
+      }
+      currentUser = null;
+      localStorage.removeItem('tw_user');
+      if (unsubConvos) { unsubConvos(); unsubConvos = null; }
+      if (unsubMessages) { unsubMessages(); unsubMessages = null; }
+      conversations = []; messages = []; activeConvoId = null;
+      render();
+    }
+  });
+}
+</script>
+
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+      navigator.serviceWorker.register('./firebase-messaging-sw.js').catch(() => {});
+    });
+  }
+
+  // ── Visual Viewport: push input area above the soft keyboard on iOS/Android ─
+  // Standard browsers resize the viewport when the keyboard opens, but
+  // Safari on iOS does not when running as a PWA. This polyfills it.
+  if (window.visualViewport) {
+    let pendingRaf = null;
+    function onViewportResize() {
+      if (pendingRaf) cancelAnimationFrame(pendingRaf);
+      pendingRaf = requestAnimationFrame(() => {
+        const vv = window.visualViewport;
+        const offsetBottom = window.innerHeight - vv.height - vv.offsetTop;
+        const inputArea = document.querySelector('.input-area');
+        if (inputArea) {
+          // Lift the input bar above the keyboard; let CSS safe-area handle the rest
+          inputArea.style.paddingBottom = offsetBottom > 20
+            ? offsetBottom + 'px'
+            : '';
+        }
+      });
+    }
+    window.visualViewport.addEventListener('resize', onViewportResize);
+    window.visualViewport.addEventListener('scroll', onViewportResize);
+  }
+
+  // ── Standalone detection ────────────────────────────────────────────────
+  (function() {
+    const isStandalone =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      window.navigator.standalone === true;
+    if (isStandalone) document.documentElement.classList.add('pwa-standalone');
+  })();
+
+  // ── beforeinstallprompt: capture for in-app "Add to Home Screen" ─────────
+  // Chrome/Android fires this before showing the mini install bar.
+  // We prevent the default, store it, and show our own prompt when ready.
+  let _installPrompt = null;
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    _installPrompt = e;
+    // Show install banner after a short delay if not already standalone
+    const isStandalone =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      window.navigator.standalone === true;
+    if (!isStandalone) setTimeout(showInstallBanner, 5000);
+  });
+
+  window.addEventListener('appinstalled', () => {
+    _installPrompt = null;
+    document.getElementById('tw-install-banner')?.remove();
+    localStorage.setItem('tw_installed', '1');
+  });
+
+  function showInstallBanner() {
+    if (!_installPrompt) return;
+    if (localStorage.getItem('tw_install_dismissed') === '1') return;
+    if (localStorage.getItem('tw_installed') === '1') return;
+    document.getElementById('tw-install-banner')?.remove();
+
+    const banner = document.createElement('div');
+    banner.id = 'tw-install-banner';
+    banner.style.cssText = [
+      'position:fixed','bottom:80px','left:16px','right:16px',
+      'background:#17171f','border:1px solid rgba(124,106,247,0.35)',
+      'border-radius:16px','padding:14px 16px','z-index:9500',
+      'display:flex','align-items:center','gap:12px',
+      'box-shadow:0 8px 32px rgba(0,0,0,0.5)',
+      'font-family:"DM Sans",sans-serif'
+    ].join(';');
+    banner.innerHTML = `
+      <span style="font-size:28px;flex-shrink:0;">📲</span>
+      <div style="flex:1;">
+        <div style="font-size:14px;font-weight:600;color:#e8e8f0;">Install Threadwise</div>
+        <div style="font-size:12px;color:#5a5a72;margin-top:2px;">Add to your home screen for the full app experience</div>
+      </div>
+      <button id="tw-install-yes" style="padding:8px 14px;border-radius:10px;border:none;background:#7c6af7;color:#fff;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;flex-shrink:0;">Install</button>
+      <button id="tw-install-no"  style="background:none;border:none;color:#5a5a72;font-size:18px;cursor:pointer;padding:4px;flex-shrink:0;">✕</button>
+    `;
+    document.body.appendChild(banner);
+
+    document.getElementById('tw-install-yes').onclick = async () => {
+      banner.remove();
+      if (!_installPrompt) return;
+      _installPrompt.prompt();
+      const { outcome } = await _installPrompt.userChoice;
+      if (outcome === 'accepted') localStorage.setItem('tw_installed', '1');
+      _installPrompt = null;
+    };
+    document.getElementById('tw-install-no').onclick = () => {
+      banner.remove();
+      localStorage.setItem('tw_install_dismissed', '1');
+    };
+  }
+</script>
+</body>
+</html>
