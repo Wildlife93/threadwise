@@ -914,14 +914,15 @@
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js';
 import {
-  getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
+  getAuth, initializeAuth, indexedDBLocalPersistence,
+  createUserWithEmailAndPassword, signInWithEmailAndPassword,
   onAuthStateChanged, signOut, updateProfile, sendEmailVerification
 } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js';
 import {
-  getFirestore, doc, setDoc, getDoc, collection, query, where,
+  getFirestore, initializeFirestore, persistentLocalCache, persistentSingleTabManager,
+  doc, setDoc, getDoc, collection, query, where,
   orderBy, onSnapshot, addDoc, updateDoc, serverTimestamp,
-  getDocs, limit, startAfter, writeBatch, increment,
-  enableIndexedDbPersistence
+  getDocs, limit, startAfter, writeBatch, increment
 } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js';
 import { getMessaging, getToken, onMessage } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-messaging.js';
 
@@ -1057,15 +1058,152 @@ let toast = null;
 let toastTimer = null;
 let conversationsLoaded = false;
 
+// ── SMS bridge ────────────────────────────────────────────────────────────
+function smsGetPhone(convoId) {
+  try { return localStorage.getItem('tw_sms_' + convoId) || ''; } catch { return ''; }
+}
+function smsSetPhone(convoId, number) {
+  try {
+    if (number) localStorage.setItem('tw_sms_' + convoId, number);
+    else localStorage.removeItem('tw_sms_' + convoId);
+  } catch {}
+}
+function isCapacitor() {
+  return !!(window.ThreadwiseSms || (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Sms));
+}
+async function smsSend(phoneNumber, message) {
+  if (isCapacitor()) {
+    try {
+      await window.Capacitor.Plugins.Sms.sendSms({ phoneNumber, message });
+      return true;
+    } catch(e) {
+      console.warn('SMS send failed:', e);
+      showToast('\u26a0\ufe0f SMS failed to send: ' + (e.message || e));
+      return false;
+    }
+  } else {
+    const encoded = encodeURIComponent(message);
+    const a = document.createElement('a');
+    a.href = `threadwise://sms?to=${encodeURIComponent(phoneNumber)}&body=${encoded}`;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { window.location.href = `sms:${phoneNumber}?body=${encoded}`; }, 1500);
+    document.body.removeChild(a);
+    return true;
+  }
+}
+
+// ── Default SMS app helpers ───────────────────────────────────────────────
+// Cached so we don't poll on every render
+let _smsIsDefault = null;
+
+async function smsCheckDefault() {
+  if (!isCapacitor()) return false;
+  try {
+    const res = await window.Capacitor.Plugins.Sms.checkDefaultSmsApp();
+    _smsIsDefault = res.isDefault;
+    return res.isDefault;
+  } catch(e) {
+    console.warn('checkDefaultSmsApp failed:', e);
+    return false;
+  }
+}
+
+async function smsRequestDefault() {
+  if (!isCapacitor()) return;
+  try {
+    await window.Capacitor.Plugins.Sms.requestDefaultSmsApp();
+    // Re-check after user returns from the system dialog
+    setTimeout(async () => {
+      await smsCheckDefault();
+      render();
+    }, 1500);
+  } catch(e) { console.warn('requestDefaultSmsApp failed:', e); }
+}
+
+// Also mark the message as read in the system SMS database
+async function smsMarkThreadRead(phoneNumber) {
+  if (!isCapacitor() || !phoneNumber) return;
+  try {
+    // Find the matching thread from the system SMS DB by address
+    const { conversations: sysCons } = await window.Capacitor.Plugins.Sms.getConversations();
+    const thread = sysCons?.find(t =>
+      t.address && phoneNumber &&
+      t.address.replace(/\D/g,'').endsWith(phoneNumber.replace(/\D/g,'').slice(-7))
+    );
+    if (thread?.threadId) {
+      await window.Capacitor.Plugins.Sms.markRead({ threadId: thread.threadId });
+    }
+  } catch(e) { console.warn('smsMarkThreadRead failed:', e); }
+}
+
+// Listen for incoming SMS from SmsReceiver.java via notifyListeners
+if (window.Capacitor) {
+  window.Capacitor.addListener?.('Sms', 'smsReceived', handleIncomingSms);
+}
+// Also listen via window event (fallback bridge method)
+window.addEventListener('smsReceived', (e) => {
+  try {
+    const data = typeof e.detail === 'string' ? JSON.parse(e.detail) : e.detail;
+    handleIncomingSms(data);
+  } catch(e) { console.warn('smsReceived parse error', e); }
+});
+async function handleIncomingSms(data) {
+  const sender = data.sender || '';
+  const body = data.body || '';
+  if (!sender || !body || !currentUser || !db) return;
+
+  // Find an existing convo linked to this number
+  let convoId = conversations.find(c => {
+    const p = smsGetPhone(c.id);
+    return p && sender.replace(/\D/g,'').endsWith(p.replace(/\D/g,'').slice(-7));
+  })?.id;
+
+  // No linked convo — create one automatically so the SMS isn't lost
+  if (!convoId) {
+    try {
+      const convoRef = await addDoc(collection(db, 'conversations'), {
+        participants: [currentUser.uid],
+        createdBy: currentUser.uid,
+        createdAt: serverTimestamp(),
+        lastMessage: '',
+        lastMessageAt: serverTimestamp(),
+        unreadCounts: { [currentUser.uid]: 0 },
+        smsOnly: true
+      });
+      convoId = convoRef.id;
+      smsSetPhone(convoId, sender);
+    } catch(e) { console.warn('handleIncomingSms: could not create convo', e); return; }
+  }
+
+  addDoc(collection(db, 'conversations', convoId, 'messages'), {
+    text: body,
+    senderId: 'sms:' + sender,
+    senderName: sender,
+    createdAt: serverTimestamp(),
+    read: false,
+    viaSms: true
+  }).catch(() => {});
+  updateDoc(doc(db, 'conversations', convoId), {
+    lastMessage: body.length > 100 ? body.slice(0, 100) + '…' : body,
+    lastMessageAt: serverTimestamp(),
+    [`unreadCounts.${currentUser.uid}`]: increment(1)
+  }).catch(() => {});
+}
+
 // ── Init Firebase ─────────────────────────────────────────────────────────
 function initFirebase() {
   try {
-    app = initializeApp(FIREBASE_CONFIG);
-    auth = getAuth(app);
-    db = getFirestore(app);
-
-    // Enable offline persistence
-    enableIndexedDbPersistence(db).catch(() => {});
+    const _cfg = Object.assign({}, FIREBASE_CONFIG);
+    _cfg.authDomain = 'threadwise-8b8f5.firebaseapp.com';
+    app = initializeApp(_cfg);
+    auth = initializeAuth(app, {
+      persistence: indexedDBLocalPersistence
+    });
+    db = initializeFirestore(app, {
+      localCache: persistentLocalCache({ tabManager: persistentSingleTabManager() })
+    });
 
     // Auto re-subscribe when coming back online
     window.addEventListener('online', () => {
@@ -1205,7 +1343,35 @@ function renderAuth() {
 
     try {
       if (authTab === 'login') {
-        await signInWithEmailAndPassword(auth, email, pass);
+        // Attempt normal sign-in; if blocked by referer, use REST fallback
+        try {
+          await signInWithEmailAndPassword(auth, email, pass);
+        } catch(_e) {
+          if (_e.code === 'auth/requests-from-referer-blocked' || _e.message?.includes('referer')) {
+            // REST API fallback - not blocked by referer
+            const _r = await fetch(
+              `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE_CONFIG.apiKey}`,
+              { method: 'POST', headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({email, password: pass, returnSecureToken: true}) }
+            );
+            const _d = await _r.json();
+            if (_d.error) throw new Error(_d.error.message);
+            // Store for offline/cache use
+            try { localStorage.setItem('tw_user', JSON.stringify({
+              uid: _d.localId, email: _d.email,
+              displayName: _d.displayName || email.split('@')[0],
+              emailVerified: true
+            })); } catch(e) {}
+            // Manually trigger the auth handler with a fake user object
+            window._twFakeUser = {
+              uid: _d.localId, email: _d.email,
+              displayName: _d.displayName || email.split('@')[0],
+              emailVerified: true,
+              getIdToken: async () => _d.idToken
+            };
+            window.dispatchEvent(new CustomEvent('tw_manual_auth', { detail: window._twFakeUser }));
+          } else { throw _e; }
+        }
       } else {
         if (!name) {
           authError = 'Enter a display name.';
@@ -1236,7 +1402,7 @@ function renderAuth() {
       // Stop spinner after a successful auth action.
       authLoading = false;
     } catch(e) {
-      authError = firebaseErrMsg(e.code);
+      authError = firebaseErrMsg(e.code) || (e.message && e.message !== 'undefined' ? e.message : null) || 'Sign in failed. Please try again.';
       authLoading = false;
       render();
     }
@@ -1258,7 +1424,8 @@ function firebaseErrMsg(code) {
     'auth/too-many-requests': 'Too many attempts. Please try again later.',
     'auth/invalid-credential': 'Invalid email or password.',
   };
-  return map[code] || `Error: ${code}`;
+  if (!code) return null;
+  return map[code] || null;
 }
 
 // ── App ───────────────────────────────────────────────────────────────────
@@ -1318,10 +1485,16 @@ function renderApp() {
 }
 
 function renderProfileMenu() {
+  const isApk = true;
+  const isDefault = _smsIsDefault === true;
   return `<div class="profile-menu" id="profile-menu">
     <div class="profile-menu-item" id="pm-profile">👤 My profile &amp; ID</div>
     <div class="profile-menu-item" id="pm-sensory">🧠 Sensory profile</div>
     <div class="profile-menu-item" id="pm-notif">${localStorage.getItem('tw_notif')==='enabled' ? '🔕 Turn off notifications' : '🔔 Turn on notifications'}</div>
+    ${isDefault
+      ? `<div class="profile-menu-item" style="color:var(--green);cursor:default;">📱 Default SMS app ✓</div>`
+      : `<div class="profile-menu-item" id="pm-sms-default" style="color:${isApk ? 'var(--accent)' : 'var(--text3)'};${isApk ? '' : 'cursor:default;'}">📱 Set as default SMS app${isApk ? '' : ' (install APK)'}</div>`
+    }
     <div class="menu-divider"></div>
     <div class="profile-menu-item danger" id="pm-signout">🚪 Sign out</div>
   </div>`;
@@ -1426,6 +1599,7 @@ function renderChatView() {
       </div>
       <div class="topbar-actions">
         ${!isSelf ? `<button class="icon-btn" title="Copy their User ID" id="copy-uid-btn">🔗</button>` : ''}
+        ${!isSelf ? `<button class="icon-btn" title="Link SMS number" id="sms-link-btn" style="${smsGetPhone(activeConvoId)?'color:#7c6af7;':''}">📱</button>` : ''}
       </div>
     </div>
 
@@ -1575,6 +1749,45 @@ function renderProfileModal() {
 }
 
 // ── Bind events ───────────────────────────────────────────────────────────
+function openSmsLinkPanel() {
+  document.getElementById('tw-sms-panel')?.remove();
+  document.querySelector('.tw-sms-overlay')?.remove();
+  const current = smsGetPhone(activeConvoId);
+  const ov = document.createElement('div');
+  ov.className = 'tw-sms-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9990;';
+  document.body.appendChild(ov);
+  const panel = document.createElement('div');
+  panel.id = 'tw-sms-panel';
+  panel.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#17171f;border-radius:20px 20px 0 0;padding:20px 18px 36px;z-index:9991;font-family:"DM Sans",sans-serif;color:#e8e8f0;';
+  panel.innerHTML = `
+    <div style="width:36px;height:4px;background:#2a2a38;border-radius:2px;margin:0 auto 18px;"></div>
+    <div style="font-size:17px;font-weight:600;margin-bottom:6px;">📱 Link SMS number</div>
+    <div style="font-size:13px;color:#5a5a72;margin-bottom:18px;">Messages you send will also be mirrored as SMS. Incoming SMS from this number will appear in this conversation.</div>
+    <div style="font-size:11px;color:#5a5a72;font-weight:600;letter-spacing:0.05em;margin-bottom:6px;">PHONE NUMBER</div>
+    <input id="tw-sms-number" type="tel" placeholder="+44 7700 900000" value="${current}"
+      style="width:100%;background:#1e1e28;border:1.5px solid rgba(255,255,255,0.07);border-radius:12px;padding:12px 14px;color:#e8e8f0;font-size:15px;outline:none;box-sizing:border-box;margin-bottom:18px;" />
+    <div style="display:flex;gap:10px;">
+      <button id="tw-sms-cancel" style="flex:1;padding:14px;border-radius:12px;border:none;background:#1e1e28;color:#e8e8f0;font-family:inherit;font-size:14px;cursor:pointer;">Cancel</button>
+      ${current ? `<button id="tw-sms-clear" style="flex:1;padding:14px;border-radius:12px;border:none;background:#2a2a38;color:#ff6b6b;font-family:inherit;font-size:14px;cursor:pointer;">Remove</button>` : ''}
+      <button id="tw-sms-save" style="flex:2;padding:14px;border-radius:12px;border:none;background:#7c6af7;color:#fff;font-family:inherit;font-size:15px;font-weight:600;cursor:pointer;">Save</button>
+    </div>
+  `;
+  document.body.appendChild(panel);
+  const close = () => { panel.remove(); ov.remove(); };
+  ov.onclick = close;
+  document.getElementById('tw-sms-cancel').onclick = close;
+  document.getElementById('tw-sms-clear')?.addEventListener('click', () => {
+    smsSetPhone(activeConvoId, ''); close(); showToast('SMS number removed'); render();
+  });
+  document.getElementById('tw-sms-save').onclick = () => {
+    const num = document.getElementById('tw-sms-number').value.trim();
+    if (!num) { showToast('Enter a phone number'); return; }
+    smsSetPhone(activeConvoId, num); close(); showToast('📱 SMS linked'); render();
+  };
+  document.getElementById('tw-sms-number')?.focus();
+}
+
 function bindAppEvents() {
   // Profile menu
   const profileBtn = document.getElementById('profile-btn');
@@ -1612,6 +1825,15 @@ function bindAppEvents() {
     profileMenuOpen = false;
     await setPresence(false);
     await signOut(auth);
+  });
+  document.getElementById('pm-sms-default')?.addEventListener('click', () => {
+    profileMenuOpen = false;
+    render();
+    if (isCapacitor()) {
+      smsRequestDefault();
+    } else {
+      showToast('Install the Threadwise APK to set as default SMS app');
+    }
   });
 
   // Close profile menu on click outside
@@ -1660,6 +1882,10 @@ function bindAppEvents() {
     if (!convo) return;
     const other = getOtherParticipant(convo);
     copyToClipboard(other.uid, 'Their UID copied!');
+  });
+
+  document.getElementById('sms-link-btn')?.addEventListener('click', () => {
+    openSmsLinkPanel();
   });
 
   // Message input
@@ -1867,18 +2093,33 @@ async function openConvo(convoId) {
   profileMenuOpen = false;
   sessionSave();
 
-  // Clear unread
-  const convo = conversations.find(c => c.id === convoId);
-  if (convo && convo.unreadCounts?.[currentUser.uid] > 0) {
-    try {
-      await updateDoc(doc(db, 'conversations', convoId), {
-        [`unreadCounts.${currentUser.uid}`]: 0
-      });
-    } catch(e) {}
-  }
+  // Load cached messages immediately — works offline and shows instantly online
+  try {
+    const raw = localStorage.getItem('tw_msgs_' + convoId);
+    if (raw) {
+      messages = JSON.parse(raw).map(m => ({
+        ...m,
+        createdAt: m.createdAt ? { toMillis: () => m.createdAt, toDate: () => new Date(m.createdAt) } : null
+      }));
+    } else {
+      messages = [];
+    }
+  } catch(e) { messages = []; }
 
   render();
-  subscribeMessages(convoId);
+
+  // Only do network ops when online
+  if (navigator.onLine) {
+    const convo = conversations.find(c => c.id === convoId);
+    if (convo && convo.unreadCounts?.[currentUser.uid] > 0) {
+      try {
+        await updateDoc(doc(db, 'conversations', convoId), {
+          [`unreadCounts.${currentUser.uid}`]: 0
+        });
+      } catch(e) {}
+    }
+    subscribeMessages(convoId);
+  }
 }
 
 function filterConversations(q) {
@@ -1953,10 +2194,10 @@ function subscribeMessages(convoId) {
     limit(80)
   );
   unsubMessages = onSnapshot(q,
-    { includeMetadataChanges: false },
+    { includeMetadataChanges: true },
     (snap) => {
       messages = snap.docs
-        .map(d => ({ id: d.id, ...d.data() }))
+        .map(d => ({ id: d.id, ...d.data(), _pending: d.metadata.hasPendingWrites }))
         .filter(m => {
           if (m.deletedForEveryone) {
             if (m.replacementNote && m.replacementNoteAt) {
@@ -2033,6 +2274,11 @@ async function markRead(convoId) {
     }
     await batch.commit();
   } catch(e) {}
+  // Also mark the linked system SMS thread as read (if default SMS app)
+  const linkedPhone = smsGetPhone(convoId);
+  if (linkedPhone && _smsIsDefault) {
+    smsMarkThreadRead(linkedPhone);
+  }
 }
 
 // Rate limit state
@@ -2161,29 +2407,16 @@ async function sendMessage() {
   msgInput.value = '';
   msgInput.style.height = 'auto';
   document.getElementById('send-btn').disabled = true;
+  // Re-focus input on Android so the keyboard stays up and button re-enables on next keypress
+  setTimeout(() => { msgInput.focus(); }, 50);
   updateTyping(false);
   clearDraft();
 
   const convo = conversations.find(c => c.id === activeConvoId);
   const otherUid = convo?.participants.find(uid => uid !== currentUser.uid);
 
-  // ── Offline path: queue the message and show it optimistically ──
-  if (!navigator.onLine) {
-    const qid = Date.now() + '_' + Math.random().toString(36).slice(2);
-    queueAdd({
-      _qid: qid,
-      convoId: activeConvoId,
-      text,
-      senderId: currentUser.uid,
-      senderName: currentUser.displayName || currentUser.email,
-      queuedAt: Date.now()
-    });
-    renderPendingMessage(text, activeConvoId);
-    showToast('📨 Saved — will send when online');
-    return;
-  }
-
-  // ── Online path: send immediately ──
+  // ── Send path: attempt Firestore directly; queue only on hard failure ──
+  // navigator.onLine is unreliable in TWA/WebView — always try the write first.
   try {
     await addDoc(collection(db, 'conversations', activeConvoId, 'messages'), {
       text,
@@ -2194,13 +2427,21 @@ async function sendMessage() {
     });
 
     await updateDoc(doc(db, 'conversations', activeConvoId), {
-      lastMessage: text.length > 100 ? text.slice(0, 100) + '…' : text,
+      lastMessage: text.length > 100 ? text.slice(0, 100) + '\u2026' : text,
       lastMessageAt: serverTimestamp(),
       ...(otherUid ? { [`unreadCounts.${otherUid}`]: increment(1) } : {})
     });
+    // Send via SMS if this convo has a linked number (or was auto-created from incoming SMS)
+    const linkedPhone = smsGetPhone(activeConvoId);
+    if (linkedPhone) {
+      const smsSent = await smsSend(linkedPhone, text);
+      if (!smsSent && isCapacitor()) {
+        showToast('⚠️ SMS not sent — check permissions');
+      }
+    }
   } catch(e) {
-    // Firestore write failed even though navigator.onLine was true —
-    // queue it so it isn't lost
+    console.log('SEND ERROR:', JSON.stringify({code: e.code, message: e.message, name: e.name}));
+    // Firestore write failed — queue it so it isn't lost
     const qid = Date.now() + '_' + Math.random().toString(36).slice(2);
     queueAdd({
       _qid: qid,
@@ -2211,7 +2452,7 @@ async function sendMessage() {
       queuedAt: Date.now()
     });
     renderPendingMessage(text, activeConvoId);
-    showToast('📨 Saved — will retry when online');
+    showToast(navigator.onLine ? '\u26a0\ufe0f Send failed — will retry' : '\U0001f4e8 Saved — will send when online');
   }
 }
 
@@ -3963,6 +4204,33 @@ if (!CONFIG_FILLED) {
     if (currentUser) setPresence(true);
   });
 
+  window.addEventListener('tw_manual_auth', async (e) => {
+    const user = e.detail;
+    currentUser = user;
+    try { localStorage.setItem('tw_user', JSON.stringify({
+      uid: user.uid, displayName: user.displayName,
+      email: user.email, emailVerified: user.emailVerified
+    })); } catch(e2) {}
+    sessionRestore();
+    loadConversationsFromCache();
+    render();
+    if (navigator.onLine) {
+      try {
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        if (!userDoc.exists()) {
+          await setDoc(doc(db, 'users', user.uid), {
+            uid: user.uid,
+            displayName: user.displayName || user.email,
+            email: user.email,
+            createdAt: serverTimestamp(),
+            online: true,
+            lastSeen: serverTimestamp()
+          });
+        }
+      } catch(e2) {}
+    }
+    if (isCapacitor()) { smsCheckDefault().then(() => render()); }
+  });
   onAuthStateChanged(auth, async (user) => {
     if (user) {
       currentUser = user;
@@ -4035,6 +4303,7 @@ if (!CONFIG_FILLED) {
       if (!notifPref || notifPref === 'later') {
         setTimeout(() => askNotificationPermission(), 3000);
       }
+      if (isCapacitor()) { smsCheckDefault().then(() => render()); }
     } else {
       // Auth returned null — check if we have a cached user for offline mode
       const cachedUser = (() => { try { return JSON.parse(localStorage.getItem('tw_user')); } catch { return null; } })();
