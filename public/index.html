@@ -2278,6 +2278,7 @@ function subscribeMessages(convoId) {
 
       if (navigator.onLine) markRead(convoId);
       const area = document.getElementById('messages-area');
+      if (!area && activeConvoId === convoId) { render(); return; }
       if (area) {
         const atBottom = area.scrollHeight - area.scrollTop - area.clientHeight < 80;
         area.innerHTML = renderMessages();
