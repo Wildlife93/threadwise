@@ -1008,7 +1008,7 @@ async function sendInParts(text) {
       await addDoc(collection(db, 'conversations', activeConvoId, 'messages'), {
         text: parts[i], senderId: currentUser.uid,
         senderName: currentUser.displayName || currentUser.email,
-        createdAt: serverTimestamp(), read: false,
+        createdAt: new Date(), read: false,
         partOf: parts.length, partIndex: i + 1
       });
       if (i < parts.length - 1) await new Promise(r => setTimeout(r, 350));
@@ -1016,7 +1016,7 @@ async function sendInParts(text) {
   }
   try {
     await updateDoc(doc(db, 'conversations', activeConvoId), {
-      lastMessage: parts[parts.length-1], lastMessageAt: serverTimestamp(),
+      lastMessage: parts[parts.length-1], lastMessageAt: new Date(),
       ...(otherUid ? { [`unreadCounts.${otherUid}`]: increment(parts.length) } : {})
     });
   } catch(e) {}
