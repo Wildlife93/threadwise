@@ -1074,7 +1074,19 @@ function isCapacitor() {
 async function smsSend(phoneNumber, message) {
   if (isCapacitor()) {
     try {
-      await window.Capacitor.Plugins.Sms.sendSms({ phoneNumber, message });
+      if (window.ThreadwiseSms) {
+        await new Promise((resolve, reject) => {
+          const id = 'sms_' + Date.now();
+          window.__twSmsCallback = (cbId, err, result) => {
+            if (cbId !== id) return;
+            delete window.__twSmsCallback;
+            err ? reject(new Error(err)) : resolve(result);
+          };
+          window.ThreadwiseSms.sendSms(phoneNumber, message, id);
+        });
+      } else {
+        await window.Capacitor.Plugins.Sms.sendSms({ phoneNumber, message });
+      }
       return true;
     } catch(e) {
       console.warn('SMS send failed:', e);
@@ -1149,6 +1161,35 @@ window.addEventListener('smsReceived', (e) => {
     handleIncomingSms(data);
   } catch(e) { console.warn('smsReceived parse error', e); }
 });
+async function smsSyncThread(convoId, phoneNumber) {
+  if (!isCapacitor() || !phoneNumber || !currentUser || !db) return;
+  try {
+    const result = await window.Capacitor.Plugins.Sms.getMessages({ address: phoneNumber, limit: 60 });
+    const msgs = result?.messages || [];
+    if (!msgs.length) return;
+    const existingSnap = await getDocs(query(collection(db, 'conversations', convoId, 'messages'), orderBy('createdAt','asc'), limit(80)));
+    const existingIds = new Set(existingSnap.docs.map(d => d.data().smsId).filter(Boolean));
+    const batch = writeBatch(db);
+    let added = 0;
+    for (const m of [...msgs].reverse()) {
+      if (existingIds.has(String(m.id))) continue;
+      const isOut = m.type === 2;
+      const msgRef = doc(collection(db, 'conversations', convoId, 'messages'));
+      batch.set(msgRef, {
+        text: m.body || '',
+        senderId: isOut ? currentUser.uid : 'sms:' + m.address,
+        senderName: isOut ? (currentUser.displayName || 'You') : m.address,
+        createdAt: new Date(m.date),
+        read: true,
+        viaSms: true,
+        smsId: String(m.id)
+      });
+      added++;
+    }
+    if (added > 0) await batch.commit();
+  } catch(e) { console.warn('smsSyncThread failed:', e); }
+}
+
 async function handleIncomingSms(data) {
   const sender = data.sender || '';
   const body = data.body || '';
@@ -1219,9 +1260,9 @@ function initFirebase() {
 
     // ── Notifications setup ───────────────────────────────────────────────
     try {
-      const messaging = getMessaging(app);
+      let messaging = null; try { messaging = getMessaging(app); } catch(e) { console.warn("Messaging not supported", e); }
       const notifPref = localStorage.getItem('tw_notif');
-      if (notifPref === 'enabled') setupNotifications(messaging);
+      if (notifPref === 'enabled') { try { setupNotifications(messaging); } catch(e) { console.warn('Messaging not supported:', e); } }
     } catch(e) { console.log('Messaging not supported:', e); }
     return true;
   } catch(e) {
@@ -2108,7 +2149,11 @@ async function openConvo(convoId) {
 
   render();
 
-  // Only do network ops when online
+  // Always subscribe — Firestore handles offline via its own persistence cache
+  subscribeMessages(convoId);
+  const _linkedPhone = smsGetPhone(convoId); if (_linkedPhone) smsSyncThread(convoId, _linkedPhone);
+
+  // Mark read when online
   if (navigator.onLine) {
     const convo = conversations.find(c => c.id === convoId);
     if (convo && convo.unreadCounts?.[currentUser.uid] > 0) {
@@ -2118,7 +2163,6 @@ async function openConvo(convoId) {
         });
       } catch(e) {}
     }
-    subscribeMessages(convoId);
   }
 }
 
@@ -2226,7 +2270,8 @@ function subscribeMessages(convoId) {
             iconColor: m.iconColor || null,
             edited: m.edited || false,
             partOf: m.partOf || null,
-            partIndex: m.partIndex || null
+            partIndex: m.partIndex || null,
+            viaSms: m.viaSms || false
           }))
         ));
       } catch(e) {}
@@ -3616,8 +3661,8 @@ async function askNotificationPermission() {
     const permission = await Notification.requestPermission();
     if (permission === 'granted') {
       localStorage.setItem('tw_notif', 'enabled');
-      const messaging = getMessaging(app);
-      await setupNotifications(messaging);
+      let messaging2 = null; try { messaging2 = getMessaging(app); } catch(e) { console.warn("Messaging not supported", e); }
+      if (messaging2) await setupNotifications(messaging2);
       showToast('Notifications on ✓');
       render();
     } else {
