@@ -86,7 +86,7 @@
       -webkit-user-select: text;
     }
 
-    #root { height: 100%; display: flex; flex-direction: column; }
+    #root { height: 100%; display: flex; flex-direction: column; overflow: hidden; overscroll-behavior: none; }
 
     /* ── Scrollbars ── */
     ::-webkit-scrollbar { width: 4px; }
@@ -94,10 +94,7 @@
     ::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 2px; }
 
     /* ── Layout ── */
-    .app { display: flex; height: 100vh; height: 100dvh; padding-top: var(--safe-top); }
-
-    /* Prevent rubber-band scroll on iOS at the root level */
-    #root { overscroll-behavior: none; }
+    .app { display: flex; height: 100vh; height: 100dvh; padding-top: var(--safe-top); overflow: hidden; }
 
     /* ── Sidebar ── */
     .sidebar {
@@ -266,6 +263,7 @@
       display: flex; flex-direction: column;
       background: var(--bg);
       min-width: 0;
+      overflow: hidden;
     }
 
     .chat-topbar {
@@ -312,7 +310,9 @@
 
     /* ── Messages ── */
     .messages-area {
-      flex: 1; overflow-y: auto;
+      flex: 1;
+      min-height: 0; /* critical: allows flex:1 child to shrink and scroll in WebView */
+      overflow-y: auto;
       padding: 16px 20px;
       display: flex; flex-direction: column;
       gap: 4px;
@@ -718,7 +718,11 @@
       }
       .sidebar.hidden { transform: translateX(-100%); }
       /* Use dvh so chat-view shrinks when the soft keyboard appears */
-      .chat-view { position: fixed; inset: 0; height: 100dvh; }
+      .chat-view {
+        position: fixed; inset: 0;
+        height: 100vh; height: 100dvh; /* dvh with vh fallback for older WebViews */
+        overflow: hidden; /* ensure flex children resolve height */
+      }
       .back-btn { display: flex; }
       .chat-topbar { padding-top: calc(14px + var(--safe-top)); }
     }
