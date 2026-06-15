@@ -2,21 +2,32 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1"/>
-  <meta name="theme-color" content="#1a1a2e"/>
-  <meta name="description" content="Threadwise — private, encrypted messaging"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no"/>
+  <meta name="theme-color" content="#0f0f14" media="(prefers-color-scheme: dark)"/>
+  <meta name="theme-color" content="#0f0f14" media="(prefers-color-scheme: light)"/>
+
+  <!-- PWA / installable app -->
+  <link rel="manifest" href="manifest.json"/>
+
+  <!-- iOS standalone app -->
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
   <meta name="apple-mobile-web-app-title" content="Threadwise"/>
+  <link rel="apple-touch-icon" href="/icons/icon-192.png"/>
+  <link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152.png"/>
+  <link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192.png"/>
+  <link rel="apple-touch-startup-image" href="/icons/icon-512.png"/>
+
+  <!-- Android / Chrome -->
   <meta name="mobile-web-app-capable" content="yes"/>
-  <meta property="og:title" content="Threadwise"/>
-  <meta property="og:description" content="Private, encrypted messaging"/>
-  <meta property="og:type" content="website"/>
-  <meta property="og:url" content="https://threadwise-8b8f5.web.app"/>
-  <meta property="og:image" content="https://threadwise-8b8f5.web.app/icons/icon-512.png"/>
-  <link rel="apple-touch-icon" href="icons/icon-192.png"/>
-  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png"/>
-  <link rel="manifest" href="manifest.json"/>
+  <meta name="application-name" content="Threadwise"/>
+
+  <!-- Prevent phone number detection & tap highlights -->
+  <meta name="format-detection" content="telephone=no"/>
+
+  <!-- Favicon fallback -->
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png"/>
+  <link rel="shortcut icon" href="/icons/icon-192.png"/>
 
   <title>Threadwise</title>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
@@ -60,6 +71,19 @@
       color: var(--text);
       -webkit-font-smoothing: antialiased;
       line-height: 1.5;
+      /* Native app feel */
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+      overscroll-behavior: none;
+      touch-action: pan-y;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    /* Re-enable text selection in message bubbles and inputs */
+    .msg-bubble, input, textarea, [contenteditable] {
+      user-select: text;
+      -webkit-user-select: text;
     }
 
     #root { height: 100%; display: flex; flex-direction: column; }
@@ -71,6 +95,9 @@
 
     /* ── Layout ── */
     .app { display: flex; height: 100vh; height: 100dvh; padding-top: var(--safe-top); }
+
+    /* Prevent rubber-band scroll on iOS at the root level */
+    #root { overscroll-behavior: none; }
 
     /* ── Sidebar ── */
     .sidebar {
@@ -359,6 +386,11 @@
       border-bottom-right-radius: 4px;
     }
 
+    .msg-bubble.pending {
+      opacity: 0.55;
+      border-style: dashed;
+    }
+
     .msg-meta {
       display: flex; align-items: center; gap: 4px;
       font-size: 10.5px; color: var(--text3);
@@ -397,7 +429,8 @@
     /* ── Input Area ── */
     .input-area {
       padding: 12px 12px 12px 12px;
-      padding-bottom: calc(12px + var(--safe-bottom));
+      /* env(safe-area-inset-bottom) covers the iOS home indicator */
+      padding-bottom: max(12px, calc(10px + env(safe-area-inset-bottom, 0px)));
       border-top: 1px solid var(--border);
       background: var(--surface);
       display: flex; align-items: flex-end; gap: 6px;
@@ -684,9 +717,16 @@
         transform: translateX(0);
       }
       .sidebar.hidden { transform: translateX(-100%); }
-      .chat-view { position: fixed; inset: 0; }
+      /* Use dvh so chat-view shrinks when the soft keyboard appears */
+      .chat-view { position: fixed; inset: 0; height: 100dvh; }
       .back-btn { display: flex; }
       .chat-topbar { padding-top: calc(14px + var(--safe-top)); }
+    }
+
+    /* iOS status-bar colour when installed as standalone */
+    @media (display-mode: standalone) {
+      .sidebar-header { padding-top: calc(20px + env(safe-area-inset-top, 0px)); }
+      .chat-topbar    { padding-top: calc(14px + env(safe-area-inset-top, 0px)); }
     }
 
     /* ── Scrolled to top indicator ── */
@@ -874,660 +914,17 @@
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js';
 import {
-  getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
+  getAuth, initializeAuth, indexedDBLocalPersistence,
+  createUserWithEmailAndPassword, signInWithEmailAndPassword,
   onAuthStateChanged, signOut, updateProfile, sendEmailVerification
 } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js';
 import {
-  getFirestore,
+  getFirestore, initializeFirestore, persistentLocalCache, persistentSingleTabManager,
   doc, setDoc, getDoc, collection, query, where,
   orderBy, onSnapshot, addDoc, updateDoc, serverTimestamp,
   getDocs, limit, startAfter, writeBatch, increment
 } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js';
 import { getMessaging, getToken, onMessage } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-messaging.js';
-import nacl from 'https://cdn.jsdelivr.net/npm/tweetnacl@1.0.3/+esm';
-import Dexie from 'https://cdn.jsdelivr.net/npm/dexie@3.2.4/dist/dexie.mjs';
-
-// ── Dexie offline cache ───────────────────────────────────────────────────
-// Replaces localStorage for conversations, messages and profiles.
-// localStorage is kept only for small settings/keys (E2E, drafts, user auth).
-const twDb = new Dexie('ThreadwiseCache');
-twDb.version(2).stores({
-  conversations: 'id, uid, lastMessageAt',
-  messages:      'id, convoId, createdAt',
-  profiles:      'uid, ownerUid'
-});
-
-// ── Dexie cache helpers ───────────────────────────────────────────────────
-async function dbSaveConversations(uid, convos) {
-  try {
-    await twDb.conversations.where('uid').equals(uid).delete();
-    await twDb.conversations.bulkPut(convos.map(c => ({ ...c, uid })));
-  } catch(e) { console.warn('dbSaveConversations', e); }
-}
-
-async function dbLoadConversations(uid) {
-  try {
-    return await twDb.conversations.where('uid').equals(uid).toArray();
-  } catch(e) { return []; }
-}
-
-async function dbSaveMessages(convoId, msgs) {
-  try {
-    await twDb.messages.where('convoId').equals(convoId).delete();
-    const toSave = msgs.filter(m => m.id).map(m => ({ ...m, convoId }));
-    if (toSave.length) await twDb.messages.bulkPut(toSave);
-    console.log('[TW Cache] Saved', toSave.length, 'messages for', convoId);
-  } catch(e) { console.warn('[TW Cache] dbSaveMessages failed:', e); }
-}
-
-async function dbLoadMessages(convoId) {
-  try {
-    const msgs = await twDb.messages.where('convoId').equals(convoId).sortBy('createdAt');
-    console.log('[TW Cache] Loaded', msgs.length, 'messages for', convoId);
-    return msgs;
-  } catch(e) { console.warn('[TW Cache] dbLoadMessages failed:', e); return []; }
-}
-
-async function dbSaveProfiles(ownerUid, profileMap) {
-  try {
-    const rows = Object.values(profileMap).map(p => ({ ...p, ownerUid }));
-    await twDb.profiles.bulkPut(rows);
-  } catch(e) { console.warn('dbSaveProfiles', e); }
-}
-
-async function dbLoadProfiles(ownerUid) {
-  try {
-    const rows = await twDb.profiles.where('ownerUid').equals(ownerUid).toArray();
-    const map = {};
-    rows.forEach(p => { map[p.uid] = p; });
-    return map;
-  } catch(e) { return {}; }
-}
-
-// ── E2E Encryption ────────────────────────────────────────────────────────
-// Uses X25519 ECDH key agreement + XSalsa20-Poly1305 authenticated encryption
-// via TweetNaCl. Private keys never leave the device.
-const E2E = (() => {
-  const PRIV_KEY = 'tw_e2e_privkey';   // localStorage key for private key (base64)
-  const PUB_KEY  = 'tw_e2e_pubkey';    // localStorage key for public key (base64)
-
-  function b64enc(u8) { return btoa(String.fromCharCode(...u8)); }
-  function b64dec(s)  { return Uint8Array.from(atob(s), c => c.charCodeAt(0)); }
-
-  // Generate a new X25519 keypair and persist locally
-  function generateAndStore() {
-    const kp = nacl.box.keyPair();
-    localStorage.setItem(PRIV_KEY, b64enc(kp.secretKey));
-    localStorage.setItem(PUB_KEY,  b64enc(kp.publicKey));
-    return kp;
-  }
-
-  // Load existing keypair from localStorage, or generate one
-  function loadOrCreate() {
-    const priv = localStorage.getItem(PRIV_KEY);
-    const pub  = localStorage.getItem(PUB_KEY);
-    if (priv && pub) {
-      return { secretKey: b64dec(priv), publicKey: b64dec(pub) };
-    }
-    return generateAndStore();
-  }
-
-  // Import a private key supplied by the user (base64 string)
-  // Returns true on success, false if invalid
-  function importPrivateKey(b64) {
-    try {
-      const sk = b64dec(b64.trim());
-      if (sk.length !== 32) return false;
-      const kp = nacl.box.keyPair.fromSecretKey(sk);
-      localStorage.setItem(PRIV_KEY, b64enc(kp.secretKey));
-      localStorage.setItem(PUB_KEY,  b64enc(kp.publicKey));
-      return true;
-    } catch { return false; }
-  }
-
-  // Export the private key as base64 (for the user to copy)
-  function exportPrivateKey() {
-    return localStorage.getItem(PRIV_KEY) || null;
-  }
-
-  // Return our public key as base64
-  function getMyPublicKey() {
-    return localStorage.getItem(PUB_KEY) || null;
-  }
-
-  // Encrypt plaintext for a recipient whose public key (base64) we have
-  // Returns base64 ciphertext string, or null on failure
-  function encrypt(plaintext, recipientPubKeyB64) {
-    try {
-      const kp          = loadOrCreate();
-      const recipientPK = b64dec(recipientPubKeyB64);
-      const nonce       = nacl.randomBytes(nacl.box.nonceLength);
-      const msgBytes    = new TextEncoder().encode(plaintext);
-      const box         = nacl.box(msgBytes, nonce, recipientPK, kp.secretKey);
-      // Pack: nonce (24 bytes) + box, then base64-encode the whole thing
-      const out = new Uint8Array(nonce.length + box.length);
-      out.set(nonce);
-      out.set(box, nonce.length);
-      return b64enc(out);
-    } catch { return null; }
-  }
-
-  // Decrypt ciphertext (base64) sent by senderPubKeyB64
-  // Returns plaintext string, or null on failure
-  function decrypt(ciphertextB64, senderPubKeyB64) {
-    try {
-      const kp       = loadOrCreate();
-      const senderPK = b64dec(senderPubKeyB64);
-      const raw      = b64dec(ciphertextB64);
-      const nonce    = raw.slice(0, nacl.box.nonceLength);
-      const box      = raw.slice(nacl.box.nonceLength);
-      const opened   = nacl.box.open(box, nonce, senderPK, kp.secretKey);
-      if (!opened) return null;
-      return new TextDecoder().decode(opened);
-    } catch { return null; }
-  }
-
-  // Fetch a user's public key from Firestore (cached in memory)
-  const _pkCache = {};
-  async function fetchPublicKey(uid) {
-    if (_pkCache[uid]) return _pkCache[uid];
-    try {
-      const snap = await getDoc(doc(db, 'users', uid));
-      const pk = snap.data()?.publicKey || null;
-      if (pk) _pkCache[uid] = pk;
-      return pk;
-    } catch { return null; }
-  }
-
-  // Save our public key to Firestore for this user
-  async function publishPublicKey(uid) {
-    const pub = getMyPublicKey();
-    if (!pub) return;
-    try {
-      await updateDoc(doc(db, 'users', uid), { publicKey: pub });
-    } catch {
-      // If the doc doesn't exist yet (race on signup) use setDoc merge
-      try { await setDoc(doc(db, 'users', uid), { publicKey: pub }, { merge: true }); } catch {}
-    }
-  }
-
-  // Encrypt for both sender and recipient so either can decrypt
-  // Returns { ct_sender, ct_recipient } — we store both in the Firestore doc
-  async function encryptForConvo(plaintext, myUid, otherUid) {
-    const [myPK, otherPK] = await Promise.all([
-      fetchPublicKey(myUid),
-      fetchPublicKey(otherUid)
-    ]);
-    if (!otherPK) return null; // recipient has no key yet
-    // Encrypt a copy for the recipient (they decrypt with their priv key)
-    const ct_recipient = encrypt(plaintext, otherPK);
-    // Encrypt a copy for ourselves (so we can read our own sent messages)
-    const myLocalPub = getMyPublicKey();
-    const ct_sender  = myLocalPub ? encrypt(plaintext, myLocalPub) : null;
-    return { ct_sender, ct_recipient };
-  }
-
-  // Decrypt a message doc. Pass the full Firestore message object.
-  // myUid = current user. Returns decrypted text or null.
-  function decryptMsg(msgDoc, myUid, senderPubKey) {
-    if (!msgDoc.encrypted) return msgDoc.text || null; // legacy plaintext
-    if (!senderPubKey) return null;
-    const isMine = msgDoc.senderId === myUid;
-    const ct = isMine ? msgDoc.ct_sender : msgDoc.ct_recipient;
-    if (!ct) return null;
-    return decrypt(ct, senderPubKey);
-  }
-
-  return {
-    loadOrCreate, generateAndStore, importPrivateKey, exportPrivateKey,
-    getMyPublicKey, publishPublicKey, fetchPublicKey,
-    encrypt, decrypt, encryptForConvo, decryptMsg
-  };
-})();
-
-// Cache of other users' public keys for decryption: uid → base64 pubkey
-const _senderPKCache = {};
-async function getSenderPK(uid) {
-  if (_senderPKCache[uid]) return _senderPKCache[uid];
-  const pk = await E2E.fetchPublicKey(uid);
-  if (pk) _senderPKCache[uid] = pk;
-  return pk || null;
-}
-
-// Decrypt all messages in the global `messages` array in-place
-// Adds a `_text` property with the decrypted content
-async function decryptMessages(msgs, myUid) {
-  // Collect unique sender UIDs
-  const uids = [...new Set(msgs.map(m => m.senderId).filter(Boolean))];
-  await Promise.all(uids.map(uid => getSenderPK(uid)));
-  msgs.forEach(m => {
-    if (m.encrypted) {
-      const pk = _senderPKCache[m.senderId] || null;
-      m._text = E2E.decryptMsg(m, myUid, pk);
-    } else {
-      m._text = m.text || null; // legacy
-    }
-  });
-}
-
-// Show modal prompting user to enter recovery phrase (new device)
-function showImportKeyModal(onSuccess) {
-  document.getElementById('tw-import-key-modal')?.remove();
-  const el = document.createElement('div');
-  el.id = 'tw-import-key-modal';
-  el.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;font-family:var(--font,"DM Sans",sans-serif);';
-  el.innerHTML = `
-    <div style="background:var(--surface,#17171f);border-radius:20px;padding:28px 24px;max-width:420px;width:100%;border:1px solid rgba(255,255,255,0.08);">
-      <div style="font-size:32px;text-align:center;margin-bottom:8px;">🔑</div>
-      <div style="font-size:18px;font-weight:700;color:var(--text,#e8e8f0);text-align:center;margin-bottom:8px;">Enter recovery phrase</div>
-      <div style="font-size:13px;color:var(--text3,#9090a8);text-align:center;line-height:1.6;margin-bottom:20px;">
-        This device doesn't have your encryption key. Enter your 12-word recovery phrase to restore access to your messages.
-      </div>
-      <textarea id="tw-import-key-input" placeholder="word1 word2 word3 … word12" rows="3"
-        style="width:100%;box-sizing:border-box;padding:12px 14px;border-radius:12px;border:1.5px solid rgba(255,255,255,0.1);background:#1e1e28;color:var(--text,#e8e8f0);font-size:16px;font-family:inherit;line-height:1.6;resize:none;outline:none;margin-bottom:6px;"></textarea>
-      <div id="tw-import-word-count" style="font-size:11px;color:#5a5a72;margin-bottom:14px;">0 of 12 words</div>
-      <div id="tw-import-key-err" style="color:#ef4444;font-size:12px;margin-bottom:14px;display:none;">Those words didn't work. Check for typos and try again.</div>
-      <div style="display:flex;gap:10px;">
-        <button id="tw-import-key-skip" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid rgba(255,255,255,0.1);background:transparent;color:var(--text3,#9090a8);font-size:14px;cursor:pointer;">
-          Skip (read-only)
-        </button>
-        <button id="tw-import-key-confirm" disabled style="flex:2;padding:12px;border-radius:12px;border:none;background:var(--accent,#7c6af7);color:#fff;font-size:14px;font-weight:600;cursor:pointer;opacity:0.5;">
-          Restore access
-        </button>
-      </div>
-      <div style="font-size:11px;color:#3a3a52;text-align:center;margin-top:12px;">Your phrase never leaves this device.</div>
-    </div>`;
-  document.body.appendChild(el);
-
-  const input = document.getElementById('tw-import-key-input');
-  const confirmBtn = document.getElementById('tw-import-key-confirm');
-  const countEl = document.getElementById('tw-import-word-count');
-  const errEl = document.getElementById('tw-import-key-err');
-
-  input.addEventListener('input', () => {
-    const words = input.value.trim().split(/\s+/).filter(Boolean);
-    countEl.textContent = `${words.length} of 12 words`;
-    countEl.style.color = words.length === 12 ? '#4caf82' : '#5a5a72';
-    confirmBtn.disabled = words.length !== 12;
-    confirmBtn.style.opacity = words.length === 12 ? '1' : '0.5';
-    errEl.style.display = 'none';
-  });
-
-  confirmBtn.onclick = async () => {
-    const phrase = input.value.trim().toLowerCase();
-    const blob = (() => { try { return JSON.parse(localStorage.getItem('tw_enc_key_by_phrase')); } catch { return null; } })();
-    if (!blob) { errEl.textContent = 'No encrypted key found. Try signing in again.'; errEl.style.display = 'block'; return; }
-    confirmBtn.disabled = true; confirmBtn.textContent = 'Checking…';
-    const privKeyB64 = await decryptKeyWithPhrase(blob, phrase);
-    if (!privKeyB64) {
-      errEl.style.display = 'block'; confirmBtn.disabled = false; confirmBtn.textContent = 'Restore access'; confirmBtn.style.opacity = '1'; return;
-    }
-    const ok = E2E.importPrivateKey(privKeyB64);
-    if (!ok) { errEl.textContent = 'Key was invalid. Please try again.'; errEl.style.display = 'block'; confirmBtn.disabled = false; confirmBtn.textContent = 'Restore access'; return; }
-    localStorage.setItem('tw_recovery_phrase', phrase);
-    el.remove(); onSuccess?.();
-  };
-
-  document.getElementById('tw-import-key-skip').onclick = () => { el.remove(); onSuccess?.(); };
-}
-
-// ── 12-word recovery phrase system ───────────────────────────────────────
-// Replaces raw base64 key export with a human-readable recovery phrase.
-// The phrase IS the private key — encoded as 12 memorable words.
-
-const PHRASE_WORDS = [
-  'apple','bridge','cloud','delta','eagle','flame','ghost','hotel',
-  'igloo','jewel','knife','lemon','maple','noble','ocean','piano',
-  'queen','river','stone','tiger','ultra','vivid','whale','xenon',
-  'yacht','zebra','amber','blaze','coral','drift','ember','frost',
-  'grove','haven','ivory','joker','karma','lunar','mango','north',
-  'orbit','pearl','quest','radar','solar','trend','unity','viola',
-  'witty','xylem','yodel','zesty','acorn','bison','cedar','dusty',
-  'elder','fable','grain','haste','inbox','jelly','lance','moose',
-  'nerve','onion','prism','quart','relay','scout','thorn','vapor',
-  'waltz','yearn','zippy','atlas','brave','crisp','dozen','elbow',
-  'finch','graze','hyena','inlet','joust','knack','lilac','mirth',
-  'nymph','otter','pixel','quirk','robin','safer','tulip','umbra',
-  'vixen','woven','yield','zonal','altar','boxer','cider','daisy',
-  'epoch','ferry','gloom','hippo','irony','jazzy','kneel','llama',
-  'merit','notch','optic','phase','quota','raven','stomp','talon',
-  'uncle','valid','walrus','young','zorba','amino','blunt','cable',
-  'drama','extra','front','guard','honey','index','jumbo','label',
-  'music','night','ozone','plain','query','ranch','sheep','torch',
-  'upper','voted','wrist','years','zones','below','climb','dense',
-  'enjoy','floor','green','heart','input','joint','koala','layer',
-  'magic','outer','power','quick','round','smart','think','urban',
-  'voice','water','zingy','angle','birth','crown','depth','event',
-  'giant','habit','image','judge','kite','light','month','never',
-  'order','point','quiet','royal','speed','table','value','winds',
-  'alone','bench','carry','drove','eight','fixed','glass','heavy',
-  'ideas','jumpy','known','lived','named','often','place','quite',
-  'range','since','train','until','usual','video','whole','ended',
-  'local','money','other','paper','radio','small','times','world',
-  'comet','diver','flare','grove','hatch','ivory','joust','karma',
-  'lotus','marsh','novel','orbit','prune','quill','ridge','spade',
-  'totem','umbra','verse','widow','xylan','yucca','zonal','abbot'
-];
-
-// Encode 32-byte private key → 12 words
-// Each word encodes ~21.3 bits; 12 words = ~256 bits
-function privKeyToPhrase(privKeyB64) {
-  try {
-    const bytes = Uint8Array.from(atob(privKeyB64), c => c.charCodeAt(0));
-    if (bytes.length !== 32) return null;
-    // Map each byte pair to a word index (256 words = 8 bits per word, 32 words needed for 32 bytes, but we want 12)
-    // Use a checksum-based encoding: convert bytes to a big integer, then pick 12 words from 256-word list
-    const words = [];
-    // Simple approach: use 3 bytes per word (gives 12 words for 32 bytes + 4 bytes checksum via last word)
-    // We'll use modular arithmetic: split 32 bytes into 12 groups
-    const wordCount = PHRASE_WORDS.length; // 256
-    for (let i = 0; i < 12; i++) {
-      // Use 2-3 bytes per word slot, cycling through the key bytes
-      const idx = (bytes[i * 2 % 32] * 256 + bytes[(i * 2 + 1) % 32] + bytes[(i + 8) % 32]) % wordCount;
-      words.push(PHRASE_WORDS[idx]);
-    }
-    return words.join(' ');
-  } catch { return null; }
-}
-
-// Decode 12 words back to the private key base64
-// Since we can't truly reverse the mapping with simple modular arithmetic,
-// we store the phrase as an AES-encrypted wrapper using the words as a passphrase.
-// The phrase is shown; to recover, user types the phrase which decrypts the stored blob.
-// The blob (encryptedKeyByPhrase) is stored in localStorage.
-
-async function encryptKeyWithPhrase(privKeyB64, phrase) {
-  const enc = new TextEncoder();
-  const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(phrase), 'PBKDF2', false, ['deriveKey']);
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const aesKey = await crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt, iterations: 200000, hash: 'SHA-256' },
-    keyMaterial, { name: 'AES-GCM', length: 256 }, false, ['encrypt']
-  );
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aesKey, enc.encode(privKeyB64));
-  const b64 = b => btoa(String.fromCharCode(...new Uint8Array(b)));
-  return { ct: b64(ct), iv: b64(iv), salt: b64(salt) };
-}
-
-async function decryptKeyWithPhrase(blob, phrase) {
-  try {
-    const enc = new TextEncoder();
-    const dec = new TextDecoder();
-    const fromb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
-    const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(phrase), 'PBKDF2', false, ['deriveKey']);
-    const aesKey = await crypto.subtle.deriveKey(
-      { name: 'PBKDF2', salt: fromb64(blob.salt), iterations: 200000, hash: 'SHA-256' },
-      keyMaterial, { name: 'AES-GCM', length: 256 }, false, ['decrypt']
-    );
-    const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: fromb64(blob.iv) }, aesKey, fromb64(blob.ct));
-    return dec.decode(pt);
-  } catch { return null; }
-}
-
-// Generate a fresh random 12-word phrase (for new users)
-function generateRecoveryPhrase() {
-  const bytes = crypto.getRandomValues(new Uint8Array(12));
-  return Array.from(bytes).map(b => PHRASE_WORDS[b % PHRASE_WORDS.length]).join(' ');
-}
-
-// Show recovery phrase to user on first signup — must confirm before proceeding
-function showRecoveryPhraseModal(phrase, onConfirmed) {
-  document.getElementById('tw-recovery-modal')?.remove();
-  const words = phrase.split(' ');
-  const el = document.createElement('div');
-  el.id = 'tw-recovery-modal';
-  el.style.cssText = 'position:fixed;inset:0;background:#0f0f14;z-index:99999;display:flex;flex-direction:column;overflow-y:auto;font-family:var(--font,"DM Sans",sans-serif);color:#e8e8f0;';
-  el.innerHTML = `
-    <div style="max-width:480px;margin:0 auto;width:100%;padding:32px 24px 56px;display:flex;flex-direction:column;gap:0;">
-      <div style="font-size:28px;text-align:center;margin-bottom:12px;">🔐</div>
-      <h2 style="font-size:22px;font-weight:700;text-align:center;margin:0 0 8px;">Save your recovery phrase</h2>
-      <p style="font-size:14px;color:#9090a8;text-align:center;line-height:1.6;margin:0 0 24px;">
-        This is the <strong style="color:#e8e8f0;">only way</strong> to recover your encrypted messages on a new device or if you lose access.
-        Write it down somewhere safe.
-      </p>
-      <div style="background:#1a1a26;border:1.5px solid rgba(124,106,247,0.3);border-radius:16px;padding:20px;margin-bottom:16px;">
-        <div style="font-size:11px;color:#5a5a72;font-weight:600;letter-spacing:0.08em;margin-bottom:14px;">YOUR 12-WORD RECOVERY PHRASE</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
-          ${words.map((w,i) => `
-            <div style="background:#0f0f14;border-radius:10px;padding:8px 10px;display:flex;align-items:center;gap:6px;">
-              <span style="font-size:10px;color:#3a3a52;font-weight:600;min-width:16px;">${i+1}</span>
-              <span style="font-size:14px;font-weight:500;color:#a594f9;">${w}</span>
-            </div>`).join('')}
-        </div>
-        <button id="tw-copy-phrase" style="margin-top:14px;width:100%;padding:10px;border-radius:10px;border:1px solid rgba(124,106,247,0.3);background:transparent;color:#7c6af7;font-family:inherit;font-size:13px;font-weight:500;cursor:pointer;">📋 Copy phrase</button>
-      </div>
-      <div style="background:#1a1209;border:1px solid rgba(251,146,60,0.3);border-radius:12px;padding:14px 16px;margin-bottom:20px;">
-        <div style="font-size:13px;color:#fb923c;line-height:1.6;">⚠️ <strong>Do not screenshot this.</strong> Write it on paper or save it in a password manager like Bitwarden (free).</div>
-      </div>
-      <div style="background:#1e1e28;border-radius:12px;padding:16px;margin-bottom:24px;">
-        <div style="font-size:13px;color:#9090a8;margin-bottom:12px;">Type the <strong style="color:#e8e8f0;">3rd and 8th</strong> words to confirm you've saved it:</div>
-        <div style="display:flex;gap:10px;">
-          <div style="flex:1;">
-            <div style="font-size:10px;color:#5a5a72;margin-bottom:4px;">WORD 3</div>
-            <input id="tw-confirm-w3" placeholder="${'·'.repeat(words[2].length)}" autocomplete="off" style="width:100%;background:#0f0f14;border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:10px 12px;color:#e8e8f0;font-family:inherit;font-size:15px;outline:none;box-sizing:border-box;"/>
-          </div>
-          <div style="flex:1;">
-            <div style="font-size:10px;color:#5a5a72;margin-bottom:4px;">WORD 8</div>
-            <input id="tw-confirm-w8" placeholder="${'·'.repeat(words[7].length)}" autocomplete="off" style="width:100%;background:#0f0f14;border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:10px 12px;color:#e8e8f0;font-family:inherit;font-size:15px;outline:none;box-sizing:border-box;"/>
-          </div>
-        </div>
-        <div id="tw-phrase-err" style="font-size:12px;color:#f07070;margin-top:8px;display:none;">Those words don't match. Check your phrase and try again.</div>
-      </div>
-      <button id="tw-phrase-confirm" disabled style="width:100%;padding:16px;border-radius:14px;border:none;background:#7c6af7;color:#fff;font-family:inherit;font-size:16px;font-weight:600;cursor:pointer;opacity:0.5;">I've saved my recovery phrase ✓</button>
-      <p style="font-size:11px;color:#3a3a52;text-align:center;margin-top:12px;line-height:1.5;">You can view this again in Profile → Recovery phrase.</p>
-    </div>`;
-  document.body.appendChild(el);
-
-  document.getElementById('tw-copy-phrase').onclick = async () => {
-    try { await navigator.clipboard.writeText(phrase); document.getElementById('tw-copy-phrase').textContent = '✓ Copied!'; setTimeout(() => { const b = document.getElementById('tw-copy-phrase'); if(b) b.textContent = '📋 Copy phrase'; }, 2000); } catch(e) {}
-  };
-  const btn = document.getElementById('tw-phrase-confirm');
-  const err = document.getElementById('tw-phrase-err');
-  function check() {
-    const a = document.getElementById('tw-confirm-w3')?.value.trim().toLowerCase();
-    const b2 = document.getElementById('tw-confirm-w8')?.value.trim().toLowerCase();
-    btn.disabled = !(a && b2); btn.style.opacity = (a && b2) ? '1' : '0.5'; err.style.display = 'none';
-  }
-  document.getElementById('tw-confirm-w3').addEventListener('input', check);
-  document.getElementById('tw-confirm-w8').addEventListener('input', check);
-  btn.onclick = () => {
-    const a = document.getElementById('tw-confirm-w3')?.value.trim().toLowerCase();
-    const b2 = document.getElementById('tw-confirm-w8')?.value.trim().toLowerCase();
-    if (a !== words[2].toLowerCase() || b2 !== words[7].toLowerCase()) { err.style.display = 'block'; return; }
-    el.remove(); onConfirmed();
-  };
-}
-
-// Show export key modal (called from profile) — now shows recovery phrase
-function showExportKeyModal() {
-  document.getElementById('tw-export-key-modal')?.remove();
-  const storedPhrase = localStorage.getItem('tw_recovery_phrase');
-  const el = document.createElement('div');
-  el.id = 'tw-export-key-modal';
-  el.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;font-family:var(--font,"DM Sans",sans-serif);';
-  el.innerHTML = `
-    <div style="background:var(--surface,#17171f);border-radius:20px;padding:28px 24px;max-width:420px;width:100%;border:1px solid rgba(255,255,255,0.08);">
-      <div style="font-size:32px;text-align:center;margin-bottom:8px;">🔑</div>
-      <div style="font-size:18px;font-weight:700;color:var(--text,#e8e8f0);text-align:center;margin-bottom:8px;">Recovery phrase</div>
-      <div style="font-size:13px;color:var(--text3,#9090a8);text-align:center;line-height:1.6;margin-bottom:20px;">
-        Use this to recover your messages on a new device.<br>
-        <b style="color:#ef4444;">Never share this with anyone.</b>
-      </div>
-      ${storedPhrase ? `
-        <div style="background:#1a1a26;border-radius:14px;padding:16px;margin-bottom:16px;">
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;">
-            ${storedPhrase.split(' ').map((w,i) => `
-              <div style="background:#0f0f14;border-radius:9px;padding:7px 9px;display:flex;align-items:center;gap:5px;">
-                <span style="font-size:9px;color:#3a3a52;min-width:14px;">${i+1}</span>
-                <span style="font-size:13px;font-weight:500;color:#a594f9;">${w}</span>
-              </div>`).join('')}
-          </div>
-        </div>
-        <button id="tw-export-key-copy" style="width:100%;padding:12px;border-radius:10px;border:none;background:var(--accent,#7c6af7);color:#fff;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:10px;">📋 Copy phrase</button>
-      ` : `
-        <div style="background:#1a1209;border:1px solid rgba(251,146,60,0.3);border-radius:12px;padding:14px;margin-bottom:16px;font-size:13px;color:#fb923c;line-height:1.6;">
-          ⚠️ Recovery phrase not found on this device. If you set up Threadwise on another device, use that device to view your phrase.
-        </div>
-      `}
-      <button id="tw-export-key-close" style="width:100%;padding:12px;border-radius:10px;border:1.5px solid var(--border,rgba(255,255,255,0.1));background:transparent;color:var(--text3,#9090a8);font-size:14px;cursor:pointer;">Close</button>
-    </div>`;
-  document.body.appendChild(el);
-
-  document.getElementById('tw-export-key-copy')?.addEventListener('click', () => {
-    if (storedPhrase) navigator.clipboard.writeText(storedPhrase).then(() => showToast('Phrase copied ✓')).catch(() => showToast('Copy failed'));
-  });
-  document.getElementById('tw-export-key-close').onclick = () => el.remove();
-  el.onclick = e => { if (e.target === el) el.remove(); };
-}
-
-// ── Offline SendQueue (IndexedDB) ────────────────────────────────────────────
-// Survives force closes. Stores pending messages and flushes on reconnect.
-const SendQueue = (() => {
-  const DB_NAME    = 'tw_queue_db';
-  const STORE_NAME = 'queue';
-  const DB_VERSION = 1;
-  let _db = null;
-
-  function openDb() {
-    if (_db) return Promise.resolve(_db);
-    return new Promise((resolve, reject) => {
-      const req = indexedDB.open(DB_NAME, DB_VERSION);
-      req.onupgradeneeded = e => {
-        const db = e.target.result;
-        if (!db.objectStoreNames.contains(STORE_NAME)) {
-          const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
-          store.createIndex('by_convo', 'convoId', { unique: false });
-        }
-      };
-      req.onsuccess = e => { _db = e.target.result; resolve(_db); };
-      req.onerror   = () => reject(req.error);
-    });
-  }
-
-  // Add a pending message to the queue
-  async function enqueue(item) {
-    const db    = await openDb();
-    const tx    = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    store.put(item);
-    return new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = rej; });
-  }
-
-  // Get all pending messages (oldest first)
-  async function getAll() {
-    const db    = await openDb();
-    const tx    = db.transaction(STORE_NAME, 'readonly');
-    const store = tx.objectStore(STORE_NAME);
-    const req   = store.getAll();
-    return new Promise((res, rej) => {
-      req.onsuccess = () => res((req.result || []).sort((a, b) => a.queuedAt - b.queuedAt));
-      req.onerror   = rej;
-    });
-  }
-
-  // Remove a sent message by its queue id
-  async function remove(id) {
-    const db    = await openDb();
-    const tx    = db.transaction(STORE_NAME, 'readwrite');
-    tx.objectStore(STORE_NAME).delete(id);
-    return new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = rej; });
-  }
-
-  // Get pending messages for a specific convo (for optimistic UI)
-  async function getForConvo(convoId) {
-    const db    = await openDb();
-    const tx    = db.transaction(STORE_NAME, 'readonly');
-    const store = tx.objectStore(STORE_NAME);
-    const idx   = store.index('by_convo');
-    const req   = idx.getAll(convoId);
-    return new Promise((res, rej) => {
-      req.onsuccess = () => res(req.result || []);
-      req.onerror   = rej;
-    });
-  }
-
-  return { enqueue, getAll, remove, getForConvo };
-})();
-
-// Flush the queue — called on reconnect and after auth is ready
-let _flushing = false;
-async function flushSendQueue() {
-  if (_flushing || !navigator.onLine || !currentUser || !db) return;
-  _flushing = true;
-  try {
-    const pending = await SendQueue.getAll();
-    if (!pending.length) { _flushing = false; return; }
-
-    for (const item of pending) {
-      try {
-        const convo    = conversations.find(c => c.id === item.convoId);
-        const otherUid = convo?.participants?.find(u => u !== currentUser.uid);
-
-        // Build the Firestore payload — re-encrypt with fresh keys
-        let msgPayload;
-        if (otherUid && item.text) {
-          const cts = await E2E.encryptForConvo(item.text, currentUser.uid, otherUid);
-          if (cts) {
-            msgPayload = {
-              text: '',
-              ct_sender: cts.ct_sender, ct_recipient: cts.ct_recipient,
-              encrypted: true,
-              senderId: currentUser.uid,
-              senderName: currentUser.displayName || currentUser.email,
-              createdAt: serverTimestamp(),
-              read: false,
-              ...(item.isIcon   ? { isIcon: true, iconColor: item.iconColor || null } : {}),
-              ...(item.partOf   ? { partOf: item.partOf, partIndex: item.partIndex } : {})
-            };
-          }
-        }
-        if (!msgPayload) {
-          msgPayload = {
-            text: item.text || '',
-            senderId: currentUser.uid,
-            senderName: currentUser.displayName || currentUser.email,
-            createdAt: serverTimestamp(),
-            read: false,
-            ...(item.isIcon ? { isIcon: true, iconColor: item.iconColor || null } : {}),
-            ...(item.partOf ? { partOf: item.partOf, partIndex: item.partIndex } : {})
-          };
-        }
-
-        await addDoc(collection(db, 'conversations', item.convoId, 'messages'), msgPayload);
-        await updateDoc(doc(db, 'conversations', item.convoId), {
-          lastMessage: msgPayload.encrypted ? '🔒 Encrypted message' : item.text,
-          lastMessageAt: serverTimestamp(),
-          ...(otherUid ? { [`unreadCounts.${otherUid}`]: increment(1) } : {})
-        });
-
-        await SendQueue.remove(item.id);
-      } catch(e) {
-        console.warn('SendQueue flush failed for item', item.id, e);
-        // Leave it in the queue to retry next time
-      }
-    }
-  } finally {
-    _flushing = false;
-  }
-}
-
-// Build an optimistic message object from an queue item (for UI display)
-function queueItemToMsg(item) {
-  return {
-    id: 'queue_' + item.id,
-    text: item.text || '',
-    senderId: item.senderId,
-    senderName: item.senderName || '',
-    createdAt: { toMillis: () => item.queuedAt, toDate: () => new Date(item.queuedAt) },
-    read: false,
-    isIcon: item.isIcon || false,
-    iconColor: item.iconColor || null,
-    partOf: item.partOf || null,
-    partIndex: item.partIndex || null,
-    _pending: true   // flag so we can show a "sending…" indicator
-  };
-}
 
 // ── Writing Tools ─────────────────────────────────────────────────────────
 const SECTION_DIVIDER = '\n\n---\n\n';
@@ -1608,34 +1005,18 @@ async function sendInParts(text) {
   const otherUid = convo?.participants?.find(u => u !== currentUser?.uid);
   for (let i = 0; i < parts.length; i++) {
     try {
-      let payload;
-      if (otherUid) {
-        const cts = await E2E.encryptForConvo(parts[i], currentUser.uid, otherUid);
-        if (cts) {
-          payload = {
-            text: '', ct_sender: cts.ct_sender, ct_recipient: cts.ct_recipient,
-            encrypted: true, senderId: currentUser.uid,
-            senderName: currentUser.displayName || currentUser.email,
-            createdAt: serverTimestamp(), read: false,
-            partOf: parts.length, partIndex: i + 1
-          };
-        }
-      }
-      if (!payload) {
-        payload = {
-          text: parts[i], senderId: currentUser.uid,
-          senderName: currentUser.displayName || currentUser.email,
-          createdAt: serverTimestamp(), read: false,
-          partOf: parts.length, partIndex: i + 1
-        };
-      }
-      await addDoc(collection(db, 'conversations', activeConvoId, 'messages'), payload);
+      await addDoc(collection(db, 'conversations', activeConvoId, 'messages'), {
+        text: parts[i], senderId: currentUser.uid,
+        senderName: currentUser.displayName || currentUser.email,
+        createdAt: serverTimestamp(), read: false,
+        partOf: parts.length, partIndex: i + 1
+      });
       if (i < parts.length - 1) await new Promise(r => setTimeout(r, 350));
     } catch(e) { showToast('Failed to send part ' + (i+1)); }
   }
   try {
     await updateDoc(doc(db, 'conversations', activeConvoId), {
-      lastMessage: '🔒 Encrypted message', lastMessageAt: serverTimestamp(),
+      lastMessage: parts[parts.length-1], lastMessageAt: serverTimestamp(),
       ...(otherUid ? { [`unreadCounts.${otherUid}`]: increment(parts.length) } : {})
     });
   } catch(e) {}
@@ -1676,23 +1057,166 @@ let showMobileChat = false;
 let toast = null;
 let toastTimer = null;
 let conversationsLoaded = false;
-let messagesLoaded = false;
+
+// ── SMS bridge ────────────────────────────────────────────────────────────
+function smsGetPhone(convoId) {
+  try { return localStorage.getItem('tw_sms_' + convoId) || ''; } catch { return ''; }
+}
+function smsSetPhone(convoId, number) {
+  try {
+    if (number) localStorage.setItem('tw_sms_' + convoId, number);
+    else localStorage.removeItem('tw_sms_' + convoId);
+  } catch {}
+}
+function isCapacitor() {
+  return !!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Sms);
+}
+async function smsSend(phoneNumber, message) {
+  if (isCapacitor()) {
+    try {
+      await window.Capacitor.Plugins.Sms.sendSms({ phoneNumber, message });
+      return true;
+    } catch(e) {
+      console.warn('SMS send failed:', e);
+      showToast('\u26a0\ufe0f SMS failed to send: ' + (e.message || e));
+      return false;
+    }
+  } else {
+    const encoded = encodeURIComponent(message);
+    const a = document.createElement('a');
+    a.href = `threadwise://sms?to=${encodeURIComponent(phoneNumber)}&body=${encoded}`;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { window.location.href = `sms:${phoneNumber}?body=${encoded}`; }, 1500);
+    document.body.removeChild(a);
+    return true;
+  }
+}
+
+// ── Default SMS app helpers ───────────────────────────────────────────────
+// Cached so we don't poll on every render
+let _smsIsDefault = null;
+
+async function smsCheckDefault() {
+  if (!isCapacitor()) return false;
+  try {
+    const res = await window.Capacitor.Plugins.Sms.checkDefaultSmsApp();
+    _smsIsDefault = res.isDefault;
+    return res.isDefault;
+  } catch(e) {
+    console.warn('checkDefaultSmsApp failed:', e);
+    return false;
+  }
+}
+
+async function smsRequestDefault() {
+  if (!isCapacitor()) return;
+  try {
+    await window.Capacitor.Plugins.Sms.requestDefaultSmsApp();
+    // Re-check after user returns from the system dialog
+    setTimeout(async () => {
+      await smsCheckDefault();
+      render();
+    }, 1500);
+  } catch(e) { console.warn('requestDefaultSmsApp failed:', e); }
+}
+
+// Also mark the message as read in the system SMS database
+async function smsMarkThreadRead(phoneNumber) {
+  if (!isCapacitor() || !phoneNumber) return;
+  try {
+    // Find the matching thread from the system SMS DB by address
+    const { conversations: sysCons } = await window.Capacitor.Plugins.Sms.getConversations();
+    const thread = sysCons?.find(t =>
+      t.address && phoneNumber &&
+      t.address.replace(/\D/g,'').endsWith(phoneNumber.replace(/\D/g,'').slice(-7))
+    );
+    if (thread?.threadId) {
+      await window.Capacitor.Plugins.Sms.markRead({ threadId: thread.threadId });
+    }
+  } catch(e) { console.warn('smsMarkThreadRead failed:', e); }
+}
+
+// Listen for incoming SMS from SmsReceiver.java via notifyListeners
+if (window.Capacitor) {
+  window.Capacitor.addListener?.('Sms', 'smsReceived', handleIncomingSms);
+}
+// Also listen via window event (fallback bridge method)
+window.addEventListener('smsReceived', (e) => {
+  try {
+    const data = typeof e.detail === 'string' ? JSON.parse(e.detail) : e.detail;
+    handleIncomingSms(data);
+  } catch(e) { console.warn('smsReceived parse error', e); }
+});
+async function handleIncomingSms(data) {
+  const sender = data.sender || '';
+  const body = data.body || '';
+  if (!sender || !body || !currentUser || !db) return;
+
+  // Find an existing convo linked to this number
+  let convoId = conversations.find(c => {
+    const p = smsGetPhone(c.id);
+    return p && sender.replace(/\D/g,'').endsWith(p.replace(/\D/g,'').slice(-7));
+  })?.id;
+
+  // No linked convo — create one automatically so the SMS isn't lost
+  if (!convoId) {
+    try {
+      const convoRef = await addDoc(collection(db, 'conversations'), {
+        participants: [currentUser.uid],
+        createdBy: currentUser.uid,
+        createdAt: serverTimestamp(),
+        lastMessage: '',
+        lastMessageAt: serverTimestamp(),
+        unreadCounts: { [currentUser.uid]: 0 },
+        smsOnly: true
+      });
+      convoId = convoRef.id;
+      smsSetPhone(convoId, sender);
+    } catch(e) { console.warn('handleIncomingSms: could not create convo', e); return; }
+  }
+
+  addDoc(collection(db, 'conversations', convoId, 'messages'), {
+    text: body,
+    senderId: 'sms:' + sender,
+    senderName: sender,
+    createdAt: serverTimestamp(),
+    clientTimestamp: Date.now(),
+    read: false,
+    viaSms: true
+  }).catch(() => {});
+  updateDoc(doc(db, 'conversations', convoId), {
+    lastMessage: body.length > 100 ? body.slice(0, 100) + '…' : body,
+    lastMessageAt: serverTimestamp(),
+    [`unreadCounts.${currentUser.uid}`]: increment(1)
+  }).catch(() => {});
+}
 
 // ── Init Firebase ─────────────────────────────────────────────────────────
 function initFirebase() {
   try {
-    app = initializeApp(FIREBASE_CONFIG);
-    auth = getAuth(app);
-    db = getFirestore(app);
+    const _cfg = Object.assign({}, FIREBASE_CONFIG);
+    _cfg.authDomain = 'threadwise-8b8f5.firebaseapp.com';
+    app = initializeApp(_cfg);
+    auth = initializeAuth(app, {
+      persistence: indexedDBLocalPersistence
+    });
+    db = initializeFirestore(app, {
+      localCache: persistentLocalCache({ tabManager: persistentSingleTabManager() })
+    });
 
     // Auto re-subscribe when coming back online
     window.addEventListener('online', () => {
       updateOnlineIndicator(true);
+      flushOfflineQueue();
       if (activeConvoId) subscribeMessages(activeConvoId);
       if (currentUser) subscribeConversations();
-      flushSendQueue();
     });
-    window.addEventListener('offline', () => updateOnlineIndicator(false));
+    window.addEventListener('offline', () => {
+      updateOnlineIndicator(false);
+      registerBackgroundSync(); // register sync so OS wakes app when online
+    });
 
     // ── Notifications setup ───────────────────────────────────────────────
     try {
@@ -1820,7 +1344,35 @@ function renderAuth() {
 
     try {
       if (authTab === 'login') {
-        await signInWithEmailAndPassword(auth, email, pass);
+        // Attempt normal sign-in; if blocked by referer, use REST fallback
+        try {
+          await signInWithEmailAndPassword(auth, email, pass);
+        } catch(_e) {
+          if (_e.code === 'auth/requests-from-referer-blocked' || _e.message?.includes('referer')) {
+            // REST API fallback - not blocked by referer
+            const _r = await fetch(
+              `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE_CONFIG.apiKey}`,
+              { method: 'POST', headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({email, password: pass, returnSecureToken: true}) }
+            );
+            const _d = await _r.json();
+            if (_d.error) throw new Error(_d.error.message);
+            // Store for offline/cache use
+            try { localStorage.setItem('tw_user', JSON.stringify({
+              uid: _d.localId, email: _d.email,
+              displayName: _d.displayName || email.split('@')[0],
+              emailVerified: true
+            })); } catch(e) {}
+            // Manually trigger the auth handler with a fake user object
+            window._twFakeUser = {
+              uid: _d.localId, email: _d.email,
+              displayName: _d.displayName || email.split('@')[0],
+              emailVerified: true,
+              getIdToken: async () => _d.idToken
+            };
+            window.dispatchEvent(new CustomEvent('tw_manual_auth', { detail: window._twFakeUser }));
+          } else { throw _e; }
+        }
       } else {
         if (!name) {
           authError = 'Enter a display name.';
@@ -1832,38 +1384,26 @@ function renderAuth() {
         const safeName = name.replace(/[<>]/g, '').trim().slice(0, 50);
         const cred = await createUserWithEmailAndPassword(auth, email, pass);
         await updateProfile(cred.user, { displayName: safeName });
-
-        // Generate keypair + recovery phrase, encrypt key with phrase for recovery
-        E2E.loadOrCreate(); // generates keypair and stores in localStorage
-        const privKeyB64 = E2E.exportPrivateKey();
-        const phrase = generateRecoveryPhrase();
-        const encKeyByPhrase = await encryptKeyWithPhrase(privKeyB64, phrase);
-        localStorage.setItem('tw_recovery_phrase', phrase);
-        localStorage.setItem('tw_enc_key_by_phrase', JSON.stringify(encKeyByPhrase));
-
         await setDoc(doc(db, 'users', cred.user.uid), {
           uid: cred.user.uid,
           displayName: safeName,
           email,
           createdAt: serverTimestamp(),
           online: true,
-          lastSeen: serverTimestamp(),
-          publicKey: E2E.getMyPublicKey(),
-          encryptedKeyByPhrase: encKeyByPhrase  // stored so new devices can recover via phrase
+          lastSeen: serverTimestamp()
         });
-        // Send verification email
-        try { await sendEmailVerification(cred.user, { url: 'https://threadwise-8b8f5.web.app' }); } catch(e) {}
-
-        // Show recovery phrase — user must confirm before app loads
-        authLoading = false;
-        showRecoveryPhraseModal(phrase, () => { render(); });
-        return; // hold until phrase confirmed
+        // Send verification email with continueUrl so link works
+        try {
+          await sendEmailVerification(cred.user, {
+            url: 'https://threadwise-8b8f5.web.app'
+          });
+        } catch(e) { /* non-critical */ }
       }
 
       // Stop spinner after a successful auth action.
       authLoading = false;
     } catch(e) {
-      authError = firebaseErrMsg(e.code);
+      authError = firebaseErrMsg(e.code) || (e.message && e.message !== 'undefined' ? e.message : null) || 'Sign in failed. Please try again.';
       authLoading = false;
       render();
     }
@@ -1885,7 +1425,8 @@ function firebaseErrMsg(code) {
     'auth/too-many-requests': 'Too many attempts. Please try again later.',
     'auth/invalid-credential': 'Invalid email or password.',
   };
-  return map[code] || `Error: ${code}`;
+  if (!code) return null;
+  return map[code] || null;
 }
 
 // ── App ───────────────────────────────────────────────────────────────────
@@ -1945,11 +1486,16 @@ function renderApp() {
 }
 
 function renderProfileMenu() {
+  const isApk = true;
+  const isDefault = _smsIsDefault === true;
   return `<div class="profile-menu" id="profile-menu">
     <div class="profile-menu-item" id="pm-profile">👤 My profile &amp; ID</div>
     <div class="profile-menu-item" id="pm-sensory">🧠 Sensory profile</div>
     <div class="profile-menu-item" id="pm-notif">${localStorage.getItem('tw_notif')==='enabled' ? '🔕 Turn off notifications' : '🔔 Turn on notifications'}</div>
-    <div class="profile-menu-item" id="pm-exportkey">🔐 Export encryption key</div>
+    ${isDefault
+      ? `<div class="profile-menu-item" style="color:var(--green);cursor:default;">📱 Default SMS app ✓</div>`
+      : `<div class="profile-menu-item" id="pm-sms-default" style="color:${isApk ? 'var(--accent)' : 'var(--text3)'};${isApk ? '' : 'cursor:default;'}">📱 Set as default SMS app${isApk ? '' : ' (install APK)'}</div>`
+    }
     <div class="menu-divider"></div>
     <div class="profile-menu-item danger" id="pm-signout">🚪 Sign out</div>
   </div>`;
@@ -1959,7 +1505,7 @@ function renderSelfThread() {
   const selfConvo = conversations.find(c => c.isSelf);
   const isActive = selfConvo && selfConvo.id === activeConvoId;
   const preview = selfConvo?.lastMessage ? truncate(selfConvo.lastMessage, 38) : 'Your private notes…';
-  const time = selfConvo?.lastMessageAt ? (toDate(selfConvo.lastMessageAt) ? formatTime(toDate(selfConvo.lastMessageAt)) : '') : '';
+  const time = selfConvo?.lastMessageAt ? formatTime(selfConvo.lastMessageAt.toDate?.() || new Date(selfConvo.lastMessageAt)) : '';
   const myName = currentUser?.displayName || currentUser?.email || 'You';
 
   return `
@@ -2007,7 +1553,7 @@ function renderConvoItem(c) {
   const other = getOtherParticipant(c);
   const isActive = c.id === activeConvoId;
   const preview = c.lastMessage ? truncate(c.lastMessage, 38) : 'Start the conversation…';
-  const time = c.lastMessageAt ? (toDate(c.lastMessageAt) ? formatTime(toDate(c.lastMessageAt)) : '') : '';
+  const time = c.lastMessageAt ? formatTime(c.lastMessageAt.toDate?.() || new Date(c.lastMessageAt)) : '';
   const unread = c.unreadCounts?.[currentUser.uid] || 0;
   return `
     <div class="chat-item ${isActive?'active':''}" data-convo="${c.id}">
@@ -2049,16 +1595,17 @@ function renderChatView() {
       <div class="topbar-info">
         <div class="topbar-name">${esc(other.name)}${isSelf ? ' <span style="font-size:11px;color:var(--text3);font-weight:400;">(You)</span>' : ''}</div>
         <div class="topbar-status${isSelf ? '' : (other.online?' online':'')}">
-          ${isSelf ? '📝 Your private notes' : (other.online ? '● Online' : (toDate(other.lastSeen) ? 'Last seen ' + formatTime(toDate(other.lastSeen)) : 'Offline'))}
+          ${isSelf ? '📝 Your private notes' : (other.online ? '● Online' : (other.lastSeen ? 'Last seen ' + formatTime(other.lastSeen.toDate?.() || new Date(other.lastSeen)) : 'Offline'))}
         </div>
       </div>
       <div class="topbar-actions">
         ${!isSelf ? `<button class="icon-btn" title="Copy their User ID" id="copy-uid-btn">🔗</button>` : ''}
+        ${!isSelf ? `<button class="icon-btn" title="Link SMS number" id="sms-link-btn" style="${smsGetPhone(activeConvoId)?'color:#7c6af7;':''}">📱</button>` : ''}
       </div>
     </div>
 
     <div class="messages-area" id="messages-area">
-      ${messagesLoaded ? renderMessages() : '<div style="text-align:center;color:var(--text3);font-size:13px;padding:20px;">Loading conversation…</div>'}
+      ${renderMessages()}
     </div>
 
     <div id="writing-tools-bar" style="display:none;background:var(--surface);border-top:1px solid var(--border);padding:8px 12px;">
@@ -2093,7 +1640,7 @@ function renderMessages() {
 
   messages.forEach((msg, i) => {
     const isOut = msg.senderId === currentUser.uid;
-    const ts = toDate(msg.createdAt) || new Date();
+    const ts = msg.createdAt?.toDate?.() || new Date(msg.clientTimestamp || msg.createdAt || Date.now());
     const dateStr = ts.toLocaleDateString(undefined, { weekday:'long', month:'short', day:'numeric' });
     const today = new Date().toLocaleDateString(undefined, { weekday:'long', month:'short', day:'numeric' });
     const yesterday = new Date(Date.now()-86400000).toLocaleDateString(undefined, { weekday:'long', month:'short', day:'numeric' });
@@ -2122,7 +1669,7 @@ function renderMessages() {
           ` : msg.deletedForEveryone ? '' : `
             ${msg.mediaUrl && msg.mediaType === 'image' ? `<img class="msg-media-img" src="${esc(msg.mediaUrl)}" alt="Image" id="img-${msg.id}" />` : ''}
             ${msg.mediaUrl && msg.mediaType === 'video' ? `<video class="msg-media-video" src="${esc(msg.mediaUrl)}" controls playsinline></video>` : ''}
-            ${msg.text ? `<div class="msg-bubble" ${msg.isIcon && msg.iconColor ? `style="border-left:3px solid ${msg.iconColor};background:rgba(${hexToRgb(msg.iconColor)},0.1);"` : ''}>${esc(msg.text)}</div>` : (msg.mediaUrl ? '' : `<div class="msg-bubble">${esc(msg.text)}</div>`)}
+            ${msg.text ? `<div class="msg-bubble${msg._pending ? ' pending' : ''}" ${msg.isIcon && msg.iconColor ? `style="border-left:3px solid ${msg.iconColor};background:rgba(${hexToRgb(msg.iconColor)},0.1);"` : ''}>${esc(msg.text)}</div>` : (msg.mediaUrl ? '' : `<div class="msg-bubble${msg._pending ? ' pending' : ''}">${esc(msg.text)}</div>`)}
             ${msg.text && twWordsOnly(msg.text) > 40 ? `
               <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">
                 <button class="read-btn" data-readview="1" data-txt="${encodeURIComponent(msg.text)}">📄 Reading view</button>
@@ -2136,7 +1683,7 @@ function renderMessages() {
             ${msg.edited ? `<span style="font-size:10px;color:var(--text3);font-style:italic;">edited</span>` : ''}
             ${msg.text && spVal('showWordCount', true) ? `<span style="font-size:10px;color:var(--text3);">${twWordsOnly(msg.text)}w</span>` : ''}
             <span style="font-size:10px;color:var(--text3);">~${twDur(twTime(msg.text||'', spGetEffectiveWpm(), true))}</span>
-            ${isOut ? `<span class="msg-status ${msg._pending ? 'pending' : (msg.read?'read':'sent')}">${msg._pending ? '🕐' : (msg.read?'✓✓':'✓')}</span>` : ''}
+            ${isOut ? `<span class="msg-status ${msg._pending ? '' : (msg.read?'read':'sent')}">${msg._pending ? '🕐' : (msg.read?'✓✓':'✓')}</span>` : ''}
           </div>
           ${msg.text ? `<button class="read-btn" data-txt="${encodeURIComponent(msg.text)}">📖 Show read</button>` : ''}
           ${!isOut && msg.text ? `
@@ -2203,6 +1750,45 @@ function renderProfileModal() {
 }
 
 // ── Bind events ───────────────────────────────────────────────────────────
+function openSmsLinkPanel() {
+  document.getElementById('tw-sms-panel')?.remove();
+  document.querySelector('.tw-sms-overlay')?.remove();
+  const current = smsGetPhone(activeConvoId);
+  const ov = document.createElement('div');
+  ov.className = 'tw-sms-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9990;';
+  document.body.appendChild(ov);
+  const panel = document.createElement('div');
+  panel.id = 'tw-sms-panel';
+  panel.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#17171f;border-radius:20px 20px 0 0;padding:20px 18px 36px;z-index:9991;font-family:"DM Sans",sans-serif;color:#e8e8f0;';
+  panel.innerHTML = `
+    <div style="width:36px;height:4px;background:#2a2a38;border-radius:2px;margin:0 auto 18px;"></div>
+    <div style="font-size:17px;font-weight:600;margin-bottom:6px;">📱 Link SMS number</div>
+    <div style="font-size:13px;color:#5a5a72;margin-bottom:18px;">Messages you send will also be mirrored as SMS. Incoming SMS from this number will appear in this conversation.</div>
+    <div style="font-size:11px;color:#5a5a72;font-weight:600;letter-spacing:0.05em;margin-bottom:6px;">PHONE NUMBER</div>
+    <input id="tw-sms-number" type="tel" placeholder="+44 7700 900000" value="${current}"
+      style="width:100%;background:#1e1e28;border:1.5px solid rgba(255,255,255,0.07);border-radius:12px;padding:12px 14px;color:#e8e8f0;font-size:15px;outline:none;box-sizing:border-box;margin-bottom:18px;" />
+    <div style="display:flex;gap:10px;">
+      <button id="tw-sms-cancel" style="flex:1;padding:14px;border-radius:12px;border:none;background:#1e1e28;color:#e8e8f0;font-family:inherit;font-size:14px;cursor:pointer;">Cancel</button>
+      ${current ? `<button id="tw-sms-clear" style="flex:1;padding:14px;border-radius:12px;border:none;background:#2a2a38;color:#ff6b6b;font-family:inherit;font-size:14px;cursor:pointer;">Remove</button>` : ''}
+      <button id="tw-sms-save" style="flex:2;padding:14px;border-radius:12px;border:none;background:#7c6af7;color:#fff;font-family:inherit;font-size:15px;font-weight:600;cursor:pointer;">Save</button>
+    </div>
+  `;
+  document.body.appendChild(panel);
+  const close = () => { panel.remove(); ov.remove(); };
+  ov.onclick = close;
+  document.getElementById('tw-sms-cancel').onclick = close;
+  document.getElementById('tw-sms-clear')?.addEventListener('click', () => {
+    smsSetPhone(activeConvoId, ''); close(); showToast('SMS number removed'); render();
+  });
+  document.getElementById('tw-sms-save').onclick = () => {
+    const num = document.getElementById('tw-sms-number').value.trim();
+    if (!num) { showToast('Enter a phone number'); return; }
+    smsSetPhone(activeConvoId, num); close(); showToast('📱 SMS linked'); render();
+  };
+  document.getElementById('tw-sms-number')?.focus();
+}
+
 function bindAppEvents() {
   // Profile menu
   const profileBtn = document.getElementById('profile-btn');
@@ -2236,15 +1822,19 @@ function bindAppEvents() {
     } catch(e) { showToast('Could not send: ' + e.message); }
     render();
   });
-  document.getElementById('pm-exportkey')?.addEventListener('click', () => {
-    profileMenuOpen = false;
-    render();
-    showExportKeyModal();
-  });
   document.getElementById('pm-signout')?.addEventListener('click', async () => {
     profileMenuOpen = false;
     await setPresence(false);
     await signOut(auth);
+  });
+  document.getElementById('pm-sms-default')?.addEventListener('click', () => {
+    profileMenuOpen = false;
+    render();
+    if (isCapacitor()) {
+      smsRequestDefault();
+    } else {
+      showToast('Install the Threadwise APK to set as default SMS app');
+    }
   });
 
   // Close profile menu on click outside
@@ -2293,6 +1883,10 @@ function bindAppEvents() {
     if (!convo) return;
     const other = getOtherParticipant(convo);
     copyToClipboard(other.uid, 'Their UID copied!');
+  });
+
+  document.getElementById('sms-link-btn')?.addEventListener('click', () => {
+    openSmsLinkPanel();
   });
 
   // Message input
@@ -2353,7 +1947,7 @@ function subscribeConversations() {
   conversationsLoaded = false;
 
   // Show cached conversations immediately while waiting for Firestore
-  loadConversationsFromCache(); // intentionally not awaited — renders incrementally
+  loadConversationsFromCache();
 
   const q = query(
     collection(db, 'conversations'),
@@ -2365,17 +1959,19 @@ function subscribeConversations() {
       conversationsLoaded = true;
       const convos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-      // Save to Dexie cache
+      // Save to localStorage backup cache
       try {
-        await dbSaveConversations(currentUser.uid, convos.map(c => ({
-          id: c.id,
-          participants: c.participants,
-          participantNames: c.participantNames || {},
-          lastMessage: c.lastMessage || '',
-          lastMessageAt: c.lastMessageAt?.toMillis?.() || 0,
-          isSelf: c.isSelf || false,
-          unreadCounts: c.unreadCounts || {}
-        })));
+        localStorage.setItem('tw_convos_' + currentUser.uid, JSON.stringify(
+          convos.map(c => ({
+            id: c.id,
+            participants: c.participants,
+            participantNames: c.participantNames || {},
+            lastMessage: c.lastMessage || '',
+            lastMessageAt: c.lastMessageAt?.toMillis?.() || 0,
+            isSelf: c.isSelf || false,
+            unreadCounts: c.unreadCounts || {}
+          }))
+        ));
       } catch(e) {}
 
       const uids = [...new Set(convos.flatMap(c => c.participants).filter(uid => uid !== currentUser.uid))];
@@ -2391,18 +1987,13 @@ function subscribeConversations() {
         return bTime - aTime;
       });
 
-      // Save profiles to Dexie — normalise lastSeen to millis so it survives round-trip
+      // Save profiles to localStorage too
       try {
         const profileCache = {};
         conversations.forEach(c => {
-          if (c.otherProfile) {
-            const p = { ...c.otherProfile };
-            const ls = toDate(p.lastSeen);
-            p.lastSeen = ls ? ls.getTime() : null;
-            profileCache[p.uid] = p;
-          }
+          if (c.otherProfile) profileCache[c.otherProfile.uid] = c.otherProfile;
         });
-        await dbSaveProfiles(currentUser.uid, profileCache);
+        localStorage.setItem('tw_profiles_' + currentUser.uid, JSON.stringify(profileCache));
       } catch(e) {}
 
       render();
@@ -2415,21 +2006,14 @@ function subscribeConversations() {
   );
 }
 
-async function loadConversationsFromCache() {
+function loadConversationsFromCache() {
   if (!currentUser) return;
   try {
-    const cached = await dbLoadConversations(currentUser.uid);
-    if (!cached.length) { conversationsLoaded = true; render(); return; }
-    const profileCache = await dbLoadProfiles(currentUser.uid);
-
-    // Restore last active conversation so the chat view loads correctly after force close
-    if (!activeConvoId) {
-      const saved = localStorage.getItem('tw_active_convo');
-      if (saved && cached.find(c => c.id === saved)) {
-        activeConvoId = saved;
-        showMobileChat = true;
-      }
-    }
+    const raw = localStorage.getItem('tw_convos_' + currentUser.uid);
+    if (!raw) { conversationsLoaded = true; render(); return; }
+    const cached = JSON.parse(raw);
+    const profileRaw = localStorage.getItem('tw_profiles_' + currentUser.uid);
+    const profileCache = profileRaw ? JSON.parse(profileRaw) : {};
 
     conversations = cached.map(c => {
       if (c.isSelf) return { ...c, otherProfile: null, lastMessageAt: c.lastMessageAt ? { toMillis: () => c.lastMessageAt } : null };
@@ -2442,48 +2026,25 @@ async function loadConversationsFromCache() {
       return bTime - aTime;
     });
     conversationsLoaded = true;
-
-    // If a conversation is active, load its cached messages before rendering
-    if (activeConvoId) {
-      try {
-        const cachedMsgs = await loadMessagesFromCache(activeConvoId);
-        if (cachedMsgs.length) {
-          messages = cachedMsgs;
-          messagesLoaded = true;
-          try {
-            await decryptMessages(messages, currentUser.uid);
-            messages.forEach(m => { if (m._text != null) m.text = m._text; });
-          } catch(e) {}
-        }
-      } catch(e) {}
-    }
-
     render();
   } catch(e) { conversationsLoaded = true; render(); }
 }
 
-async function loadMessagesFromCache(convoId) {
-  try {
-    const cached = await dbLoadMessages(convoId);
-    return cached.map(m => ({
-      ...m,
-      createdAt: m.createdAt ? { toMillis: () => m.createdAt, toDate: () => new Date(m.createdAt) } : null
-    }));
-  } catch {
-    return [];
-  }
-}
-
 async function fetchUserProfiles(uids) {
   const result = {};
-  const profileCache = await dbLoadProfiles(currentUser.uid);
+  // Try localStorage cache first
+  let profileCache = {};
+  try {
+    const raw = localStorage.getItem('tw_profiles_' + currentUser.uid);
+    if (raw) profileCache = JSON.parse(raw);
+  } catch(e) {}
 
   await Promise.all(uids.map(async uid => {
     try {
       const snap = await getDoc(doc(db, 'users', uid));
       if (snap.exists()) result[uid] = snap.data();
     } catch(e) {
-      // Offline — use Dexie profile cache
+      // Offline — use localStorage profile cache
       if (profileCache[uid]) {
         result[uid] = profileCache[uid];
       } else {
@@ -2498,72 +2059,66 @@ async function fetchUserProfiles(uids) {
 }
 
 function getOtherParticipant(convo) {
-  const otherUid = convo?.participants?.find(uid => uid !== currentUser?.uid) || '';
   if (convo.otherProfile) {
     return {
-      uid: convo.otherProfile.uid || otherUid,
-      name: convo.otherProfile.displayName || convo.participantNames?.[otherUid] || 'Unknown',
+      uid: convo.otherProfile.uid,
+      name: convo.otherProfile.displayName || 'Unknown',
       online: convo.otherProfile.online || false,
       lastSeen: convo.otherProfile.lastSeen
     };
   }
-  return {
-    uid: otherUid,
-    name: convo?.participantNames?.[otherUid] || 'Unknown',
-    online: false
-  };
+  return { uid: '', name: 'Unknown', online: false };
+}
+
+// ── Session persistence (survives force-close) ───────────────────────────
+const SESSION_KEY = 'tw_session';
+function sessionSave() {
+  try {
+    localStorage.setItem(SESSION_KEY, JSON.stringify({
+      activeConvoId,
+      showMobileChat
+    }));
+  } catch(e) {}
+}
+function sessionRestore() {
+  try {
+    const s = JSON.parse(localStorage.getItem(SESSION_KEY) || '{}');
+    if (s.activeConvoId) activeConvoId = s.activeConvoId;
+    if (s.showMobileChat) showMobileChat = !!s.showMobileChat;
+  } catch(e) {}
 }
 
 async function openConvo(convoId) {
   activeConvoId = convoId;
   showMobileChat = true;
   profileMenuOpen = false;
-  messagesLoaded = false;
-  try { localStorage.setItem('tw_active_convo', convoId); } catch(e) {}
+  sessionSave();
 
-  // Clear unread (skip if offline — will fail silently anyway)
-  if (navigator.onLine) {
-    const convo = conversations.find(c => c.id === convoId);
-    if (convo && convo.unreadCounts?.[currentUser.uid] > 0) {
-      try {
-        await updateDoc(doc(db, 'conversations', convoId), {
-          [`unreadCounts.${currentUser.uid}`]: 0
-        });
-      } catch(e) {}
-    }
-  }
-
-  // Load cached messages immediately
-  const cachedMessages = await loadMessagesFromCache(convoId);
-  messages = cachedMessages;
-  if (messages.length) {
-    try {
-      if (currentUser) {
-        await decryptMessages(messages, currentUser.uid);
-        messages.forEach(m => { if (m._text !== undefined && m._text !== null) m.text = m._text; });
-      }
-    } catch(e) { console.warn('[TW] Decrypt error in openConvo:', e); }
-    messagesLoaded = true;
-  } else {
-    console.log('[TW Cache] No cached messages found for', convoId);
-  }
-
-  // Also append any pending queue items
+  // Load cached messages immediately — works offline and shows instantly online
   try {
-    const pending = await SendQueue.getForConvo(convoId);
-    pending.forEach(item => messages.push(queueItemToMsg(item)));
-  } catch(e) {}
+    const raw = localStorage.getItem('tw_msgs_' + convoId);
+    if (raw) {
+      messages = JSON.parse(raw).map(m => ({
+        ...m,
+        createdAt: m.createdAt ? { toMillis: () => m.createdAt, toDate: () => new Date(m.createdAt) } : null
+      }));
+    } else {
+      messages = [];
+    }
+  } catch(e) { messages = []; }
 
   render();
-  scrollToBottom();
 
-  // Only subscribe to live messages if online — offline, cache is already shown
-  if (navigator.onLine) {
-    subscribeMessages(convoId);
-  } else {
-    // Offline — nothing more to do, cache is already displayed
-    messagesLoaded = true;
+  // Always subscribe — navigator.onLine is unreliable in TWA/WebView
+  const convo = conversations.find(c => c.id === convoId);
+  if (convo && convo.unreadCounts?.[currentUser.uid] > 0) {
+    try {
+      await updateDoc(doc(db, 'conversations', convoId), {
+        [`unreadCounts.${currentUser.uid}`]: 0
+      });
+    } catch(e) {}
   }
+  subscribeMessages(convoId);
 }
 
 function filterConversations(q) {
@@ -2632,19 +2187,17 @@ function showError(el, msg) {
 // ── Messages ──────────────────────────────────────────────────────────────
 function subscribeMessages(convoId) {
   if (unsubMessages) unsubMessages();
-  // Only reset to loading state if we have no messages to show yet
-  // Only show loading spinner if we have nothing cached to display yet
-  if (!messages.length) messagesLoaded = false;
   const q = query(
     collection(db, 'conversations', convoId, 'messages'),
-    orderBy('createdAt', 'asc'),
+    orderBy('createdAt', 'desc'),
     limit(80)
   );
   unsubMessages = onSnapshot(q,
-    { includeMetadataChanges: false },
-    async (snap) => {
-      let rawMsgs = snap.docs
-        .map(d => ({ id: d.id, ...d.data() }))
+    { includeMetadataChanges: true },
+    (snap) => {
+      messages = snap.docs
+        .map(d => ({ id: d.id, ...d.data(), _pending: d.metadata.hasPendingWrites }))
+        .reverse()
         .filter(m => {
           if (m.deletedForEveryone) {
             if (m.replacementNote && m.replacementNoteAt) {
@@ -2657,39 +2210,12 @@ function subscribeMessages(convoId) {
           return true;
         });
 
-      // Decrypt E2E messages
-      await decryptMessages(rawMsgs, currentUser.uid);
-      // Apply decrypted text back
-      rawMsgs.forEach(m => { if (m._text !== undefined) m.text = m._text; });
-
-      // If Firestore is empty but we have cached messages, keep the cache visible.
-      if (!rawMsgs.length) {
-        const cached = await loadMessagesFromCache(convoId);
-        if (cached.length) {
-          await decryptMessages(cached, currentUser.uid);
-          cached.forEach(m => { if (m._text !== undefined) m.text = m._text; });
-          rawMsgs = cached;
-        }
-      }
-
-      messages = rawMsgs;
-
-      // Append any still-pending queue items so they stay visible
+      // Save messages to localStorage cache
       try {
-        const pending = await SendQueue.getForConvo(convoId);
-        pending.forEach(item => messages.push(queueItemToMsg(item)));
-      } catch(e) {}
-
-      // Save to Dexie cache — only save real Firestore messages (not pending queue items)
-      try {
-        const toCache = messages
-          .filter(m => !m._pending && m.id && !m.id.startsWith('ob_'))
-          .map(m => ({
+        localStorage.setItem('tw_msgs_' + convoId, JSON.stringify(
+          messages.map(m => ({
             id: m.id,
             text: m.text || '',
-            ct_sender: m.ct_sender || null,
-            ct_recipient: m.ct_recipient || null,
-            encrypted: m.encrypted || false,
             senderId: m.senderId,
             senderName: m.senderName || '',
             createdAt: m.createdAt?.toMillis?.() || Date.now(),
@@ -2701,47 +2227,35 @@ function subscribeMessages(convoId) {
             edited: m.edited || false,
             partOf: m.partOf || null,
             partIndex: m.partIndex || null
-          }));
-        if (toCache.length) await dbSaveMessages(convoId, toCache);
-      } catch(e) { console.warn('[TW Cache] Save failed:', e); }
+          }))
+        ));
+      } catch(e) {}
 
-      if (navigator.onLine) markRead(convoId);
-      const wasLoaded = messagesLoaded;
-      messagesLoaded = true;
-      if (!wasLoaded) {
-        render();
-        scrollToBottom();
-      } else {
-        const area = document.getElementById('messages-area');
-        if (area) {
-          const atBottom = area.scrollHeight - area.scrollTop - area.clientHeight < 80;
-          area.innerHTML = renderMessages();
-          if (atBottom) scrollToBottom();
-        }
+      markRead(convoId); // markRead handles its own errors
+      const area = document.getElementById('messages-area');
+      if (area) {
+        const atBottom = area.scrollHeight - area.scrollTop - area.clientHeight < 80;
+        area.innerHTML = renderMessages();
+        if (atBottom) scrollToBottom();
       }
     },
     (err) => {
-      // Offline — cache already loaded in openConvo, just mark loaded
-      (async () => {
-        try {
-          if (!messagesLoaded) {
-            const cached = await loadMessagesFromCache(convoId);
-            if (cached.length) {
-              let msgs = cached;
-              await decryptMessages(msgs, currentUser.uid);
-              msgs.forEach(m => { if (m._text !== undefined) m.text = m._text; });
-              try {
-                const pending = await SendQueue.getForConvo(convoId);
-                pending.forEach(item => msgs.push(queueItemToMsg(item)));
-              } catch(e) {}
-              messages = msgs;
-            }
-            messagesLoaded = true;
-            render();
+      // Offline — load from localStorage cache
+      try {
+        const raw = localStorage.getItem('tw_msgs_' + convoId);
+        if (raw) {
+          const cached = JSON.parse(raw);
+          messages = cached.map(m => ({
+            ...m,
+            createdAt: m.createdAt ? { toMillis: () => m.createdAt, toDate: () => new Date(m.createdAt) } : null
+          }));
+          const area = document.getElementById('messages-area');
+          if (area) {
+            area.innerHTML = renderMessages();
             scrollToBottom();
           }
-        } catch(e) { messagesLoaded = true; }
-      })();
+        }
+      } catch(e) {}
     }
   );
 }
@@ -2760,12 +2274,113 @@ async function markRead(convoId) {
     }
     await batch.commit();
   } catch(e) {}
+  // Also mark the linked system SMS thread as read (if default SMS app)
+  const linkedPhone = smsGetPhone(convoId);
+  if (linkedPhone && _smsIsDefault) {
+    smsMarkThreadRead(linkedPhone);
+  }
 }
 
 // Rate limit state
 let lastSendTime = 0;
 let sendCount = 0;
 let sendWindowStart = 0;
+
+// ── Offline message queue ─────────────────────────────────────────────────
+// Messages typed while offline are stored in localStorage and flushed
+// automatically the moment the connection comes back.
+
+const QUEUE_KEY = 'tw_offline_queue';
+
+function queueLoad() {
+  try { return JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]'); } catch { return []; }
+}
+function queueSave(q) {
+  try { localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); } catch {}
+}
+function queueAdd(item) {
+  const q = queueLoad();
+  q.push(item);
+  queueSave(q);
+}
+function queueRemove(id) {
+  queueSave(queueLoad().filter(m => m._qid !== id));
+}
+
+// Optimistically render a pending message in the UI (so the sender sees it immediately)
+function renderPendingMessage(text, convoId) {
+  if (convoId !== activeConvoId) return;
+  const area = document.getElementById('messages-area');
+  if (!area) return;
+  const ts = new Date();
+  const fakeMsg = {
+    id: 'pending-' + Date.now(),
+    text,
+    senderId: currentUser.uid,
+    senderName: currentUser.displayName || currentUser.email,
+    createdAt: { toDate: () => ts, toMillis: () => ts.getTime() },
+    read: false,
+    _pending: true
+  };
+  messages.push(fakeMsg);
+  area.innerHTML = renderMessages();
+  scrollToBottom();
+}
+
+// Remove a pending optimistic message from the UI once it's confirmed or replaced
+function removePendingMessage(qid) {
+  messages = messages.filter(m => m.id !== 'pending-' + qid);
+  const area = document.getElementById('messages-area');
+  if (area) area.innerHTML = renderMessages();
+}
+
+// Flush the queue — called on boot if online, and whenever we come back online
+async function flushOfflineQueue() {
+  if (!navigator.onLine || !currentUser || !db) return;
+  const queue = queueLoad();
+  if (!queue.length) return;
+
+  for (const item of queue) {
+    // Discard items older than 7 days
+    if (Date.now() - item.queuedAt > 7 * 24 * 3600 * 1000) {
+      queueRemove(item._qid);
+      continue;
+    }
+    try {
+      // Validate the conversation still exists before writing
+      const convoSnap = await getDoc(doc(db, 'conversations', item.convoId));
+      if (!convoSnap.exists()) {
+        queueRemove(item._qid);
+        continue;
+      }
+      await addDoc(collection(db, 'conversations', item.convoId, 'messages'), {
+        text: item.text,
+        senderId: item.senderId,
+        senderName: item.senderName,
+        createdAt: serverTimestamp(),
+        read: false
+      });
+      const convoData = convoSnap.data();
+      const otherUid = convoData?.participants?.find(uid => uid !== item.senderId);
+      await updateDoc(doc(db, 'conversations', item.convoId), {
+        lastMessage: item.text.length > 100 ? item.text.slice(0, 100) + '…' : item.text,
+        lastMessageAt: serverTimestamp(),
+        ...(otherUid ? { [`unreadCounts.${otherUid}`]: increment(1) } : {})
+      });
+      queueRemove(item._qid);
+    } catch(e) {
+      // Network or permission error — leave in queue, stop for now
+      break;
+    }
+  }
+
+  const remaining = queueLoad();
+  if (remaining.length === 0 && queueLoad().length === 0) {
+    // All flushed — nothing to announce
+  } else if (remaining.length < queue.length) {
+    showToast('✓ Queued messages sent');
+  }
+}
 
 async function sendMessage() {
   const msgInput = document.getElementById('msg-input');
@@ -2792,66 +2407,53 @@ async function sendMessage() {
   msgInput.value = '';
   msgInput.style.height = 'auto';
   document.getElementById('send-btn').disabled = true;
+  // Re-focus input on Android so the keyboard stays up and button re-enables on next keypress
+  setTimeout(() => { msgInput.focus(); }, 50);
   updateTyping(false);
   clearDraft();
 
   const convo = conversations.find(c => c.id === activeConvoId);
   const otherUid = convo?.participants.find(uid => uid !== currentUser.uid);
 
-  // ── Offline: enqueue and show optimistically ──
-  if (!navigator.onLine) {
-    const queueItem = {
-      id: 'ob_' + Date.now() + '_' + Math.random().toString(36).slice(2),
+  // ── Send path: attempt Firestore directly; queue only on hard failure ──
+  // navigator.onLine is unreliable in TWA/WebView — always try the write first.
+  try {
+    await addDoc(collection(db, 'conversations', activeConvoId, 'messages'), {
+      text,
+      senderId: currentUser.uid,
+      senderName: currentUser.displayName || currentUser.email,
+      createdAt: serverTimestamp(),
+      clientTimestamp: Date.now(),
+      read: false
+    });
+
+    await updateDoc(doc(db, 'conversations', activeConvoId), {
+      lastMessage: text.length > 100 ? text.slice(0, 100) + '\u2026' : text,
+      lastMessageAt: serverTimestamp(),
+      ...(otherUid ? { [`unreadCounts.${otherUid}`]: increment(1) } : {})
+    });
+    // Send via SMS if this convo has a linked number (or was auto-created from incoming SMS)
+    const linkedPhone = smsGetPhone(activeConvoId);
+    if (linkedPhone) {
+      const smsSent = await smsSend(linkedPhone, text);
+      if (!smsSent && isCapacitor()) {
+        showToast('⚠️ SMS not sent — check permissions');
+      }
+    }
+  } catch(e) {
+    console.log('SEND ERROR:', JSON.stringify({code: e.code, message: e.message, name: e.name}));
+    // Firestore write failed — queue it so it isn't lost
+    const qid = Date.now() + '_' + Math.random().toString(36).slice(2);
+    queueAdd({
+      _qid: qid,
       convoId: activeConvoId,
       text,
       senderId: currentUser.uid,
       senderName: currentUser.displayName || currentUser.email,
       queuedAt: Date.now()
-    };
-    await SendQueue.enqueue(queueItem);
-    // Show optimistically in messages list
-    messages.push(queueItemToMsg(queueItem));
-    const area = document.getElementById('messages-area');
-    if (area) { area.innerHTML = renderMessages(); scrollToBottom(); }
-    return;
-  }
-
-  try {
-    let msgPayload;
-    if (otherUid) {
-      const cts = await E2E.encryptForConvo(text, currentUser.uid, otherUid);
-      if (cts) {
-        msgPayload = {
-          text: '',
-          ct_sender: cts.ct_sender,
-          ct_recipient: cts.ct_recipient,
-          encrypted: true,
-          senderId: currentUser.uid,
-          senderName: currentUser.displayName || currentUser.email,
-          createdAt: serverTimestamp(),
-          read: false
-        };
-      }
-    }
-    if (!msgPayload) {
-      msgPayload = {
-        text,
-        senderId: currentUser.uid,
-        senderName: currentUser.displayName || currentUser.email,
-        createdAt: serverTimestamp(),
-        read: false
-      };
-    }
-
-    await addDoc(collection(db, 'conversations', activeConvoId, 'messages'), msgPayload);
-
-    await updateDoc(doc(db, 'conversations', activeConvoId), {
-      lastMessage: msgPayload.encrypted ? '🔒 Encrypted message' : (text.length > 100 ? text.slice(0, 100) + '…' : text),
-      lastMessageAt: serverTimestamp(),
-      ...(otherUid ? { [`unreadCounts.${otherUid}`]: increment(1) } : {})
     });
-  } catch(e) {
-    showToast('Failed to send: ' + e.message);
+    renderPendingMessage(text, activeConvoId);
+    showToast(navigator.onLine ? '\u26a0\ufe0f Send failed — will retry' : '\U0001f4e8 Saved — will send when online');
   }
 }
 
@@ -2932,17 +2534,6 @@ function avatarColor(name) {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
   return COLORS[Math.abs(h) % COLORS.length];
-}
-
-// Safely convert ANY timestamp format → Date (Firestore Timestamp, {seconds,nanoseconds}, millis, ISO string)
-function toDate(val) {
-  if (!val) return null;
-  if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
-  if (typeof val.toDate === 'function') { const d = val.toDate(); return isNaN(d.getTime()) ? null : d; }
-  if (typeof val === 'object' && val.seconds != null) return new Date(val.seconds * 1000);
-  if (typeof val === 'number' && val > 0) return new Date(val);
-  if (typeof val === 'string') { const d = new Date(val); return isNaN(d.getTime()) ? null : d; }
-  return null;
 }
 
 function formatTime(date) {
@@ -3283,25 +2874,11 @@ function openEditMessage(msgId) {
       return;
     }
     try {
-      const convo = conversations.find(c => c.id === activeConvoId);
-      const otherUid = convo?.participants?.find(u => u !== currentUser?.uid);
-      let editPayload = { edited: true, editedAt: serverTimestamp() };
-
-      if (msg.encrypted && otherUid) {
-        const cts = await E2E.encryptForConvo(newText, currentUser.uid, otherUid);
-        if (cts) {
-          editPayload.ct_sender = cts.ct_sender;
-          editPayload.ct_recipient = cts.ct_recipient;
-          editPayload.text = '';
-          editPayload.encrypted = true;
-        } else {
-          editPayload.text = newText;
-        }
-      } else {
-        editPayload.text = newText;
-      }
-
-      await updateDoc(doc(db, 'conversations', activeConvoId, 'messages', msgId), editPayload);
+      await updateDoc(doc(db, 'conversations', activeConvoId, 'messages', msgId), {
+        text: newText,
+        edited: true,
+        editedAt: serverTimestamp()
+      });
       showToast('Message edited ✓');
       el.remove();
     } catch(e) {
@@ -3675,6 +3252,7 @@ async function uploadMedia(file, isVideo, previewEl, objectUrl) {
       senderId: currentUser.uid,
       senderName: currentUser.displayName || currentUser.email,
       createdAt: serverTimestamp(),
+      clientTimestamp: Date.now(),
       read: false
     });
 
@@ -4320,28 +3898,17 @@ async function sendIconMessage(text, color) {
   const convo = conversations.find(c => c.id === activeConvoId);
   const otherUid = convo?.participants?.find(u => u !== currentUser.uid);
   try {
-    let payload;
-    if (otherUid) {
-      const cts = await E2E.encryptForConvo(text, currentUser.uid, otherUid);
-      if (cts) {
-        payload = {
-          text: '', ct_sender: cts.ct_sender, ct_recipient: cts.ct_recipient,
-          encrypted: true, iconColor: color || null, isIcon: true,
-          senderId: currentUser.uid, senderName: currentUser.displayName || currentUser.email,
-          createdAt: serverTimestamp(), read: false
-        };
-      }
-    }
-    if (!payload) {
-      payload = {
-        text, iconColor: color || null, isIcon: true,
-        senderId: currentUser.uid, senderName: currentUser.displayName || currentUser.email,
-        createdAt: serverTimestamp(), read: false
-      };
-    }
-    await addDoc(collection(db, 'conversations', activeConvoId, 'messages'), payload);
+    await addDoc(collection(db, 'conversations', activeConvoId, 'messages'), {
+      text,
+      iconColor: color || null,
+      isIcon: true,
+      senderId: currentUser.uid,
+      senderName: currentUser.displayName || currentUser.email,
+      createdAt: serverTimestamp(),
+      read: false
+    });
     await updateDoc(doc(db, 'conversations', activeConvoId), {
-      lastMessage: payload.encrypted ? '🔒 Encrypted message' : text,
+      lastMessage: text,
       lastMessageAt: serverTimestamp(),
       ...(otherUid ? { [`unreadCounts.${otherUid}`]: increment(1) } : {})
     });
@@ -4576,110 +4143,96 @@ function openAbuseReport(msgId, senderId, senderName) {
   };
 }
 
+// ── Deep-link / shortcut / notification handler ──────────────────────────
+// Runs after auth resolves — reads URL params set by shortcuts or notif taps
+function handleDeepLink() {
+  const params = new URLSearchParams(window.location.search);
+  const action  = params.get('action');
+  const convoId = params.get('convo');
+
+  if (convoId) {
+    // Opened from a notification — jump straight to that convo
+    const convo = conversations.find(c => c.id === convoId);
+    if (convo) openConvo(convoId);
+    return;
+  }
+  if (action === 'new-chat') {
+    showNewChat = true; render();
+  } else if (action === 'self-thread') {
+    openSelfThread();
+  }
+}
+
+// ── Background Sync registration helper ───────────────────────────────────
+async function registerBackgroundSync() {
+  if (!('serviceWorker' in navigator) || !('SyncManager' in window)) return;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    await reg.sync.register('tw-message-sync');
+  } catch(e) { /* not supported — queue flush handles it instead */ }
+}
+
+// ── Listen for messages from the service worker ───────────────────────────
+navigator.serviceWorker?.addEventListener('message', event => {
+  if (event.data?.type === 'SYNC_FLUSH') {
+    flushOfflineQueue();
+  } else if (event.data?.type === 'OPEN_CONVO' && event.data.convoId) {
+    const convo = conversations.find(c => c.id === event.data.convoId);
+    if (convo) openConvo(event.data.convoId);
+  }
+});
+
 // ── Boot ──────────────────────────────────────────────────────────────────
 // Check initial online status
 if (!navigator.onLine) updateOnlineIndicator(false);
-
-// Read Firebase auth from IndexedDB — survives force close on Samsung
-// Firebase stores auth in 'firebaseLocalStorageDb' IndexedDB
-function readFirebaseUid() {
-  return new Promise(function(resolve) {
-    try {
-      var req = indexedDB.open('firebaseLocalStorageDb', 1);
-      req.onsuccess = function(e) {
-        try {
-          var db = e.target.result;
-          var stores = Array.from(db.objectStoreNames);
-          if (!stores.length) { resolve(null); return; }
-          var tx = db.transaction(stores[0], 'readonly');
-          var store = tx.objectStore(stores[0]);
-          var getAllReq = store.getAll();
-          getAllReq.onsuccess = function() {
-            var records = getAllReq.result || [];
-            var uid = null;
-            for (var i = 0; i < records.length; i++) {
-              var val = records[i].value || records[i];
-              if (typeof val === 'string') {
-                try { val = JSON.parse(val); } catch(e) {}
-              }
-              if (val && val.uid) { uid = val.uid; break; }
-              if (val && val.localId) { uid = val.localId; break; }
-            }
-            resolve(uid);
-          };
-          getAllReq.onerror = function() { resolve(null); };
-        } catch(e) { resolve(null); }
-      };
-      req.onerror = function() { resolve(null); };
-    } catch(e) { resolve(null); }
-  });
-}
-
-async function preloadFromCache(uid) {
-  if (!uid) return false;
-  try {
-    var userRaw = localStorage.getItem('tw_user');
-    currentUser = userRaw ? JSON.parse(userRaw) : { uid: uid, displayName: 'You', email: '' };
-
-    // Load from Dexie
-    var cached = await twDb.conversations.where('uid').equals(uid).toArray();
-    if (!cached.length) return false;
-
-    var profileRows = await twDb.profiles.where('ownerUid').equals(uid).toArray();
-    var profileCache = {};
-    profileRows.forEach(function(p) { profileCache[p.uid] = p; });
-
-    conversations = cached.map(function(c) {
-      if (c.isSelf) return Object.assign({}, c, {
-        otherProfile: null,
-        lastMessageAt: c.lastMessageAt ? { toMillis: function() { return c.lastMessageAt; } } : null
-      });
-      var otherUid = (c.participants || []).filter(function(id) { return id !== uid; })[0];
-      var profile = profileCache[otherUid] || { uid: otherUid, displayName: (c.participantNames && c.participantNames[otherUid]) || 'Unknown' };
-      return Object.assign({}, c, {
-        otherProfile: profile,
-        lastMessageAt: c.lastMessageAt ? { toMillis: function() { return c.lastMessageAt; } } : null
-      });
-    }).sort(function(a, b) {
-      return ((b.lastMessageAt && b.lastMessageAt.toMillis()) || 0) - ((a.lastMessageAt && a.lastMessageAt.toMillis()) || 0);
-    });
-    conversationsLoaded = true;
-    render();
-    return true;
-  } catch(e) { return false; }
-}
-
-// Preload from Dexie cache on boot — async but fast (IndexedDB is local)
-(function() {
-  var userRaw = localStorage.getItem('tw_user');
-  var uid = null;
-  try { uid = userRaw ? JSON.parse(userRaw).uid : null; } catch(e) {}
-
-  if (uid) {
-    preloadFromCache(uid).then(function(loaded) {
-      if (loaded) return;
-      // No Dexie data — try Firebase's own IndexedDB as fallback for uid
-      readFirebaseUid().then(function(fbUid) {
-        if (fbUid) preloadFromCache(fbUid);
-      });
-    });
-  } else {
-    readFirebaseUid().then(function(fbUid) {
-      if (fbUid) preloadFromCache(fbUid);
-    });
-  }
-})();
 if (!CONFIG_FILLED) {
   render();
 } else {
   initFirebase();
 
   // Presence on window events
+  // Only mark offline on actual unload (tab close / navigation away),
+  // not on visibility change — backgrounding a PWA is not the same as leaving.
   window.addEventListener('beforeunload', () => setPresence(false));
   document.addEventListener('visibilitychange', () => {
-    setPresence(!document.hidden);
+    if (!document.hidden && currentUser) {
+      // Coming back to foreground — re-assert online
+      setPresence(true);
+    }
+    // Do NOT set offline on hidden — app may just be backgrounded on mobile
+  });
+  // Also re-assert presence when the page regains focus
+  window.addEventListener('focus', () => {
+    if (currentUser) setPresence(true);
   });
 
+  window.addEventListener('tw_manual_auth', async (e) => {
+    const user = e.detail;
+    currentUser = user;
+    try { localStorage.setItem('tw_user', JSON.stringify({
+      uid: user.uid, displayName: user.displayName,
+      email: user.email, emailVerified: user.emailVerified
+    })); } catch(e2) {}
+    sessionRestore();
+    loadConversationsFromCache();
+    render();
+    if (navigator.onLine) {
+      try {
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        if (!userDoc.exists()) {
+          await setDoc(doc(db, 'users', user.uid), {
+            uid: user.uid,
+            displayName: user.displayName || user.email,
+            email: user.email,
+            createdAt: serverTimestamp(),
+            online: true,
+            lastSeen: serverTimestamp()
+          });
+        }
+      } catch(e2) {}
+    }
+    if (isCapacitor()) { smsCheckDefault().then(() => render()); }
+  });
   onAuthStateChanged(auth, async (user) => {
     if (user) {
       currentUser = user;
@@ -4700,101 +4253,75 @@ if (!CONFIG_FILLED) {
         return;
       }
 
-      // ── E2E key bootstrap ────────────────────────────────────────────────
-      // Ensure this device has a local keypair
-      E2E.loadOrCreate();
-      const localPub = E2E.getMyPublicKey();
+      // Restore last open convo so force-close doesn't reset navigation
+      sessionRestore();
 
+      // Load from localStorage cache immediately — works offline
+      loadConversationsFromCache();
+
+      // Pre-load cached messages for the restored convo so UI shows instantly
+      if (activeConvoId) {
+        try {
+          const raw = localStorage.getItem('tw_msgs_' + activeConvoId);
+          if (raw) {
+            messages = JSON.parse(raw).map(m => ({
+              ...m,
+              createdAt: m.createdAt ? { toMillis: () => m.createdAt, toDate: () => new Date(m.createdAt) } : null
+            }));
+          }
+        } catch(e) {}
+      }
+
+      render();
+
+      // Restore live subscription for the open convo
+      if (activeConvoId) subscribeMessages(activeConvoId); // onLine unreliable in TWA
+
+      // Then try Firestore — only if online
       if (navigator.onLine) {
         try {
           const userDoc = await getDoc(doc(db, 'users', user.uid));
-          const firestorePub = userDoc.data()?.publicKey || null;
-
           if (!userDoc.exists()) {
-            // Brand new user — publish key as part of initial doc
             await setDoc(doc(db, 'users', user.uid), {
               uid: user.uid,
               displayName: user.displayName || user.email,
               email: user.email,
               createdAt: serverTimestamp(),
               online: true,
-              lastSeen: serverTimestamp(),
-              publicKey: localPub
+              lastSeen: serverTimestamp()
             });
           } else {
             await updateDoc(doc(db, 'users', user.uid), { online: true, lastSeen: serverTimestamp() });
-
-            if (!firestorePub) {
-              // Existing user with no key stored — publish ours
-              await updateDoc(doc(db, 'users', user.uid), { publicKey: localPub });
-            } else if (firestorePub !== localPub) {
-              // Firestore has a key but it doesn't match ours — new device
-              // Check if we have any private key at all
-              const hasLocalPriv = !!localStorage.getItem('tw_e2e_privkey');
-              if (!hasLocalPriv) {
-                // Fetch encrypted key blob from Firestore so phrase modal can decrypt it
-                const encBlob = userDoc.data()?.encryptedKeyByPhrase || null;
-                if (encBlob) { try { localStorage.setItem('tw_enc_key_by_phrase', JSON.stringify(encBlob)); } catch(e) {} }
-                showImportKeyModal(async () => {
-                  const newPub = E2E.getMyPublicKey();
-                  if (newPub && newPub !== firestorePub) {
-                    try { await updateDoc(doc(db, 'users', user.uid), { publicKey: newPub }); } catch {}
-                  }
-                  loadConversationsFromCache();
-                  render();
-                  subscribeConversations();
-                });
-                return; // halt here — modal will call render/subscribe
-              }
-              // We have a local key but it differs — our key is authoritative,
-              // sync it back to Firestore so new messages encrypt to our real key
-              await updateDoc(doc(db, 'users', user.uid), { publicKey: localPub });
-            }
           }
-        } catch(e) { console.warn('E2E key bootstrap error:', e); }
+        } catch(e) {}
       }
 
-      // Load from cache immediately — works offline
-      await loadConversationsFromCache();
-      render();
-
       subscribeConversations();
-
-      // Flush any messages queued while offline / after force close
-      if (navigator.onLine) flushSendQueue();
+      flushOfflineQueue();
+      registerBackgroundSync();
+      setTimeout(handleDeepLink, 400); // wait for convos to load first
 
       const notifPref = localStorage.getItem('tw_notif');
       if (!notifPref || notifPref === 'later') {
         setTimeout(() => askNotificationPermission(), 3000);
       }
+      if (isCapacitor()) { smsCheckDefault().then(() => render()); }
     } else {
-      // Auth returned null.
-      // Firebase Auth fires null briefly during network loss even if the user
-      // was previously logged in. Only truly sign out if we have no cached
-      // user AND we're online (genuine sign-out / expired session).
+      // Auth returned null — check if we have a cached user for offline mode
       const cachedUser = (() => { try { return JSON.parse(localStorage.getItem('tw_user')); } catch { return null; } })();
-      if (cachedUser) {
-        // Check Dexie async — keep user logged in if we have cached data
-        twDb.conversations.where('uid').equals(cachedUser.uid).count().then(async count => {
-          if (count > 0) {
-            if (!currentUser) {
-              currentUser = cachedUser;
-              await loadConversationsFromCache();
-            }
-          } else {
-            // No cache — genuine signed-out state
-            currentUser = null;
-            localStorage.removeItem('tw_user');
-            if (unsubConvos) { unsubConvos(); unsubConvos = null; }
-            if (unsubMessages) { unsubMessages(); unsubMessages = null; }
-            conversations = []; messages = []; activeConvoId = null;
-            render();
-          }
-        }).catch(() => {
-          currentUser = null; localStorage.removeItem('tw_user'); render();
-        });
+      if (cachedUser && !navigator.onLine) {
+        // Offline with cached user — load from cache without full auth
+        currentUser = cachedUser;
+        loadConversationsFromCache();
+        render();
         return;
       }
+      currentUser = null;
+      localStorage.removeItem('tw_user');
+      if (unsubConvos) { unsubConvos(); unsubConvos = null; }
+      if (unsubMessages) { unsubMessages(); unsubMessages = null; }
+      conversations = []; messages = []; activeConvoId = null;
+      render();
     }
   });
 }
@@ -4803,22 +4330,101 @@ if (!CONFIG_FILLED) {
 <script>
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js').then(reg => {
-        // Register background sync so SW can trigger queue flush after force close
-        if ('sync' in reg) {
-          window.addEventListener('online', () => {
-            reg.sync.register('tw-send-queue').catch(() => {});
-          });
-        }
-      }).catch(() => {});
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+      navigator.serviceWorker.register('./firebase-messaging-sw.js').catch(() => {});
+    });
+  }
 
-      // Listen for flush signal from SW (after background sync fires)
-      navigator.serviceWorker.addEventListener('message', event => {
-        if (event.data?.type === 'FLUSH_SEND_QUEUE') {
-          if (typeof flushSendQueue === 'function') flushSendQueue();
+  // ── Visual Viewport: push input area above the soft keyboard on iOS/Android ─
+  // Standard browsers resize the viewport when the keyboard opens, but
+  // Safari on iOS does not when running as a PWA. This polyfills it.
+  if (window.visualViewport) {
+    let pendingRaf = null;
+    function onViewportResize() {
+      if (pendingRaf) cancelAnimationFrame(pendingRaf);
+      pendingRaf = requestAnimationFrame(() => {
+        const vv = window.visualViewport;
+        const offsetBottom = window.innerHeight - vv.height - vv.offsetTop;
+        const inputArea = document.querySelector('.input-area');
+        if (inputArea) {
+          // Lift the input bar above the keyboard; let CSS safe-area handle the rest
+          inputArea.style.paddingBottom = offsetBottom > 20
+            ? offsetBottom + 'px'
+            : '';
         }
       });
-    });
+    }
+    window.visualViewport.addEventListener('resize', onViewportResize);
+    window.visualViewport.addEventListener('scroll', onViewportResize);
+  }
+
+  // ── Standalone detection ────────────────────────────────────────────────
+  (function() {
+    const isStandalone =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      window.navigator.standalone === true;
+    if (isStandalone) document.documentElement.classList.add('pwa-standalone');
+  })();
+
+  // ── beforeinstallprompt: capture for in-app "Add to Home Screen" ─────────
+  // Chrome/Android fires this before showing the mini install bar.
+  // We prevent the default, store it, and show our own prompt when ready.
+  let _installPrompt = null;
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    _installPrompt = e;
+    // Show install banner after a short delay if not already standalone
+    const isStandalone =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      window.navigator.standalone === true;
+    if (!isStandalone) setTimeout(showInstallBanner, 5000);
+  });
+
+  window.addEventListener('appinstalled', () => {
+    _installPrompt = null;
+    document.getElementById('tw-install-banner')?.remove();
+    localStorage.setItem('tw_installed', '1');
+  });
+
+  function showInstallBanner() {
+    if (!_installPrompt) return;
+    if (localStorage.getItem('tw_install_dismissed') === '1') return;
+    if (localStorage.getItem('tw_installed') === '1') return;
+    document.getElementById('tw-install-banner')?.remove();
+
+    const banner = document.createElement('div');
+    banner.id = 'tw-install-banner';
+    banner.style.cssText = [
+      'position:fixed','bottom:80px','left:16px','right:16px',
+      'background:#17171f','border:1px solid rgba(124,106,247,0.35)',
+      'border-radius:16px','padding:14px 16px','z-index:9500',
+      'display:flex','align-items:center','gap:12px',
+      'box-shadow:0 8px 32px rgba(0,0,0,0.5)',
+      'font-family:"DM Sans",sans-serif'
+    ].join(';');
+    banner.innerHTML = `
+      <span style="font-size:28px;flex-shrink:0;">📲</span>
+      <div style="flex:1;">
+        <div style="font-size:14px;font-weight:600;color:#e8e8f0;">Install Threadwise</div>
+        <div style="font-size:12px;color:#5a5a72;margin-top:2px;">Add to your home screen for the full app experience</div>
+      </div>
+      <button id="tw-install-yes" style="padding:8px 14px;border-radius:10px;border:none;background:#7c6af7;color:#fff;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;flex-shrink:0;">Install</button>
+      <button id="tw-install-no"  style="background:none;border:none;color:#5a5a72;font-size:18px;cursor:pointer;padding:4px;flex-shrink:0;">✕</button>
+    `;
+    document.body.appendChild(banner);
+
+    document.getElementById('tw-install-yes').onclick = async () => {
+      banner.remove();
+      if (!_installPrompt) return;
+      _installPrompt.prompt();
+      const { outcome } = await _installPrompt.userChoice;
+      if (outcome === 'accepted') localStorage.setItem('tw_installed', '1');
+      _installPrompt = null;
+    };
+    document.getElementById('tw-install-no').onclick = () => {
+      banner.remove();
+      localStorage.setItem('tw_install_dismissed', '1');
+    };
   }
 </script>
 </body>
