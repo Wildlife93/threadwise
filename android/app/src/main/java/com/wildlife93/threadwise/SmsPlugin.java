@@ -30,6 +30,11 @@ import com.getcapacitor.annotation.PermissionCallback;
     }
 )
 public class SmsPlugin extends Plugin {
+    @Override
+    public void load() {
+        SmsReceiver.staticBridge = this.bridge;
+    }
+
 
     @PluginMethod
     public void send(PluginCall call) {
