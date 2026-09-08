@@ -710,18 +710,25 @@
 
     /* ── Mobile ── */
     @media (max-width: 680px) {
+      .app {
+        position: relative;
+        overflow: hidden;
+      }
       .sidebar {
-        position: fixed; inset: 0; right: auto;
+        position: absolute; inset: 0; right: auto;
         width: 100%; min-width: unset;
         z-index: 10;
         transform: translateX(0);
+        transition: transform 0.3s cubic-bezier(.4,0,.2,1);
       }
       .sidebar.hidden { transform: translateX(-100%); }
-      /* Use dvh so chat-view shrinks when the soft keyboard appears */
+      /* Chat view fills the app naturally — no fixed positioning needed in APK */
       .chat-view {
-        position: fixed; inset: 0;
-        height: 100vh; height: 100dvh; /* dvh with vh fallback for older WebViews */
-        overflow: hidden; /* ensure flex children resolve height */
+        position: relative;
+        width: 100%;
+        height: 100%;
+        z-index: 1;
+        overflow: hidden;
       }
       .back-btn { display: flex; }
       .chat-topbar { padding-top: calc(14px + var(--safe-top)); }
@@ -3636,6 +3643,135 @@ async function askNotificationPermission() {
 
 // ── Icon & Feelings System ────────────────────────────────────────────────
 
+const STICKER_CATEGORIES = {
+  'My State': [
+    { id:'s_brainfog',      icon:'🫧', label:'Brain Fog',           text:'🫧 Brain Fog\nhard to think clearly' },
+    { id:'s_looping',       icon:'🌀', label:'Looping Thoughts',    text:'🌀 Looping Thoughts\ncan\'t switch off' },
+    { id:'s_tangled',       icon:'🧶', label:'Tangled Feelings',    text:'🧶 Tangled Feelings\ntoo much at once' },
+    { id:'s_nowords',       icon:'🔇', label:'Can\'t Find Words',   text:'🔇 Can\'t Find Words\nor language' },
+    { id:'s_eflood',        icon:'🌊', label:'Emotional Flood',     text:'🌊 Emotional Flood\nfeeling overwhelmed' },
+    { id:'s_signal',        icon:'📡', label:'Signal\'s Weak',      text:'📡 Signal\'s Weak\nlow bandwidth' },
+    { id:'s_replaying',     icon:'🪞', label:'Replaying Something', text:'🪞 Replaying Something' },
+    { id:'s_paralysis',     icon:'⚖️', label:'Decision Paralysis',  text:'⚖️ Decision Paralysis' },
+    { id:'s_empty',         icon:'🔋', label:'Running on Empty',    text:'🔋 Running on Empty\ndepleted' },
+    { id:'s_wallhit',       icon:'🧱', label:'Wall Hit',            text:'🧱 Wall Hit\nsudden shutdown' },
+    { id:'s_dissoc',        icon:'🌫️', label:'Dissociating',        text:'🌫️ Dissociating' },
+    { id:'s_loud',          icon:'🎛️', label:'Everything\'s Loud',  text:'🎛️ Everything\'s Loud\nsensory / mental noise' },
+  ],
+  'Masking': [
+    { id:'s_maskslip',      icon:'🎭', label:'Mask Slipping',       text:'🎭 Mask Slipping\ncan\'t keep it up' },
+    { id:'s_maskdrain',     icon:'🔋', label:'Masking Drain',       text:'🔋 Masking Drain\nusing all my energy' },
+    { id:'s_stims',         icon:'🤐', label:'Suppressing Stims',   text:'🤐 Suppressing Stims\nholding it in' },
+    { id:'s_scripted',      icon:'🗣️', label:'Scripted Small Talk', text:'🗣️ Scripted Small Talk\nrehearsed responses' },
+    { id:'s_smile',         icon:'😊', label:'Forced Smile',        text:'😊 Forced Smile\nperforming okay' },
+    { id:'s_copying',       icon:'👥', label:'Copying Others',      text:'👥 Copying Others\nmirroring to fit in' },
+    { id:'s_crash',         icon:'💥', label:'Post-Mask Crash',     text:'💥 Post-Mask Crash\ncollapse after holding it together' },
+    { id:'s_holdtog',       icon:'🧊', label:'Holding It Together', text:'🧊 Holding It Together\nbarely keeping composed' },
+    { id:'s_overperf',      icon:'🎯', label:'Overperforming Normal',text:'🎯 Overperforming Normal\ntrying too hard to seem fine' },
+    { id:'s_unmask',        icon:'🫥', label:'Need to Unmask',      text:'🫥 Need to Unmask\nsafe space needed' },
+    { id:'s_eyescript',     icon:'👁️', label:'Eye Contact Script',  text:'👁️ Eye Contact Script\nfaking natural eye contact' },
+    { id:'s_rehearse',      icon:'🗒️', label:'Rehearsing Responses',text:'🗒️ Rehearsing Responses\nplanning what to say' },
+  ],
+  'Illness': [
+    { id:'s_fever',         icon:'🤒', label:'Fever',               text:'🤒 Fever\nrunning hot' },
+    { id:'s_nausea',        icon:'🤢', label:'Nauseous',            text:'🤢 Nauseous\nfeel sick' },
+    { id:'s_headache',      icon:'🤕', label:'Headache',            text:'🤕 Headache\npounding' },
+    { id:'s_exhausted',     icon:'😮‍💨', label:'Exhausted',          text:'😮‍💨 Exhausted\nno energy' },
+    { id:'s_chills',        icon:'🥶', label:'Chills',              text:'🥶 Chills\ncan\'t get warm' },
+    { id:'s_congested',     icon:'🤧', label:'Congested',           text:'🤧 Congested\nstuffy & blocked' },
+    { id:'s_sleepy',        icon:'😪', label:'Can\'t Stay Awake',   text:'😪 Can\'t Stay Awake\nneed to sleep' },
+    { id:'s_canteat',       icon:'🙅', label:'Can\'t Eat',          text:'🙅 Can\'t Eat\nappetite\'s gone' },
+    { id:'s_meds',          icon:'💊', label:'Need Medication',     text:'💊 Need Medication\ntime for meds' },
+    { id:'s_rest',          icon:'🛌', label:'Need to Rest',        text:'🛌 Need to Rest\nbody needs to stop' },
+    { id:'s_aches',         icon:'😖', label:'Body Aches',          text:'😖 Body Aches\neverything hurts' },
+    { id:'s_dizzy',         icon:'🌀', label:'Dizzy',               text:'🌀 Dizzy\nroom\'s spinning' },
+    { id:'s_throat',        icon:'🗣️', label:'Sore Throat',         text:'🗣️ Sore Throat\nhurts to talk' },
+    { id:'s_stomach',       icon:'😣', label:'Stomach Problems',    text:'😣 Stomach Problems\ncramping / upset stomach' },
+    { id:'s_fragile',       icon:'🩹', label:'Fragile',             text:'🩹 Fragile\nhandle with care today' },
+  ],
+  'Work & Chores': [
+    { id:'s_meetings',      icon:'🗣️', label:'Meeting Overload',    text:'🗣️ Meeting Overload\ntoo much talking & listening' },
+    { id:'s_taskswitch',    icon:'🔀', label:'Task Switching',      text:'🔀 Task Switching\ncontext switching exhausted' },
+    { id:'s_deadline',      icon:'⏰', label:'Deadline Pressure',   text:'⏰ Deadline Pressure\nrunning out of time' },
+    { id:'s_smalltalkw',    icon:'🧑‍🤝‍🧑',label:'Forced Small Talk', text:'🧑‍🤝‍🧑 Forced Small Talk\nperforming sociable' },
+    { id:'s_broken',        icon:'🖨️', label:'Broken Equipment',    text:'🖨️ Broken Equipment\ntech not working' },
+    { id:'s_laundry',       icon:'🧺', label:'Laundry Pile',        text:'🧺 Laundry Pile\noverwhelmed by the pile' },
+    { id:'s_dishes',        icon:'🍽️', label:'Dishes Piling Up',    text:'🍽️ Dishes Piling Up\navoidance spiral' },
+    { id:'s_clutter',       icon:'🗑️', label:'Clutter Overwhelm',   text:'🗑️ Clutter Overwhelm\ntoo much mess around me' },
+    { id:'s_manytasks',     icon:'📋', label:'Too Many Tasks',      text:'📋 Too Many Tasks\ndon\'t know where to start' },
+    { id:'s_openplan',      icon:'🏢', label:'Open-Plan Overwhelm', text:'🏢 Open-Plan Overwhelm\nno privacy, constant noise' },
+    { id:'s_phone',         icon:'📞', label:'Phone Ringing',       text:'📞 Phone Ringing\nstartling & intrusive' },
+    { id:'s_tooquiet',      icon:'🔇', label:'Too Quiet',           text:'🔇 Too Quiet\nsilence feels loud too' },
+  ],
+  'Restaurant': [
+    { id:'s_menuover',      icon:'🍽️', label:'Menu Overwhelm',      text:'🍽️ Menu Overwhelm\ntoo many choices' },
+    { id:'s_bgnoise',       icon:'🔊', label:'Background Noise',    text:'🔊 Background Noise\nhard to filter out' },
+    { id:'s_waiting',       icon:'⏳', label:'Waiting Anxiety',     text:'⏳ Waiting Anxiety\nnot sure what\'s happening' },
+    { id:'s_watched',       icon:'👀', label:'Feeling Watched',     text:'👀 Feeling Watched\npublic space pressure' },
+    { id:'s_food',          icon:'🥘', label:'Food Uncertainty',    text:'🥘 Food Uncertainty\nnot sure what\'s in it' },
+    { id:'s_smalltalkr',    icon:'💬', label:'Small Talk Drain',    text:'💬 Small Talk Drain\nsociable mode is hard' },
+    { id:'s_seating',       icon:'🪑', label:'Seating Discomfort',  text:'🪑 Seating Discomfort\nwrong chair, wrong spot' },
+    { id:'s_bill',          icon:'🧾', label:'Bill Stress',         text:'🧾 Bill Stress\nmaths & splitting pressure' },
+    { id:'s_tempoff',       icon:'🌡️', label:'Temperature Off',     text:'🌡️ Temperature Off\ntoo hot or too cold inside' },
+    { id:'s_exit',          icon:'🚪', label:'Need an Exit',        text:'🚪 Need an Exit\nfeeling trapped in here' },
+  ],
+  'General': [
+    { id:'s_notsure',       icon:'🤷', label:'Not Sure Why',        text:'🤷 Not Sure Why\ncan\'t identify the cause' },
+    { id:'s_routine',       icon:'🔄', label:'Routine Disrupted',   text:'🔄 Routine Disrupted\nplans changed' },
+    { id:'s_overthink',     icon:'🧠', label:'Overthinking',        text:'🧠 Overthinking\nstuck in my head' },
+    { id:'s_miscomm',       icon:'💬', label:'Miscommunication',    text:'💬 Miscommunication\nwords came out wrong' },
+    { id:'s_timeblind',     icon:'🕰️', label:'Time Blindness',      text:'🕰️ Time Blindness\nlost track of time' },
+    { id:'s_numb',          icon:'😐', label:'Numb / Flat',         text:'😐 Numb / Flat\nno strong feelings either way' },
+    { id:'s_off',           icon:'🧩', label:'Something\'s Off',    text:'🧩 Something\'s Off\ncan\'t place what' },
+    { id:'s_cantfocus',     icon:'🎯', label:'Can\'t Focus',        text:'🎯 Can\'t Focus\nattention keeps drifting' },
+    { id:'s_tabs',          icon:'🖥️', label:'Too Many Tabs',       text:'🖥️ Too Many Tabs\nbrowser & brain both cluttered' },
+    { id:'s_enjoying',      icon:'🎨', label:'Enjoying This',       text:'🎨 Enjoying This\nin a good flow' },
+    { id:'s_accomplished',  icon:'🏆', label:'Feeling Accomplished', text:'🏆 Feeling Accomplished\nproud of what I did' },
+    { id:'s_energized',     icon:'🔥', label:'Energized',           text:'🔥 Energized\nready to go' },
+    { id:'s_content',       icon:'🙂', label:'Content',             text:'🙂 Content\ncomfortable right now' },
+  ],
+  'Travel': [
+    { id:'s_flight',        icon:'✈️', label:'Flight Nerves',       text:'✈️ Flight Nerves\nbefore takeoff' },
+    { id:'s_airport',       icon:'🛂', label:'Airport Overwhelm',   text:'🛂 Airport Overwhelm\nqueues & crowds' },
+    { id:'s_packing',       icon:'🧳', label:'Packing Panic',       text:'🧳 Packing Panic\nlast-minute scramble' },
+    { id:'s_newplace',      icon:'🗺️', label:'New Place New Rules', text:'🗺️ New Place, New Rules\nunfamiliar systems' },
+    { id:'s_langap',        icon:'🌍', label:'Language Gap',        text:'🌍 Language Gap\ncan\'t find the words' },
+    { id:'s_timezone',      icon:'🕐', label:'Time Zone Drift',     text:'🕐 Time Zone Drift\nbody clock\'s off' },
+    { id:'s_transfer',      icon:'🚕', label:'Transfer Stress',     text:'🚕 Transfer Stress\nlogistics piling up' },
+    { id:'s_strangebed',    icon:'🛏️', label:'Strange Bed',         text:'🛏️ Strange Bed\nsleep thrown off' },
+    { id:'s_security',      icon:'🛃', label:'Security Scan',       text:'🛃 Security Scan\npat-downs & scanners' },
+    { id:'s_rushed',        icon:'🏃', label:'Being Rushed',        text:'🏃 Being Rushed\nstaff hurrying me' },
+    { id:'s_tannoy',        icon:'📢', label:'Tannoy Overload',     text:'📢 Tannoy Overload\nconstant announcements' },
+    { id:'s_gatechange',    icon:'🚪', label:'Gate Change',         text:'🚪 Gate Change\nsudden change of plan' },
+  ],
+  'Carer Grief': [
+    { id:'s_carempty',      icon:'🔋', label:'Running on Empty',    text:'🔋 Running on Empty\nthe caring is taking everything' },
+    { id:'s_carehold',      icon:'🫙', label:'Holding It Together', text:'🫙 Holding It Together\nbut only just' },
+    { id:'s_heartbreak',    icon:'💔', label:'Heartbroken for Them',text:'💔 Heartbroken for Them\nwatching them go through this' },
+    { id:'s_motions',       icon:'🌫️', label:'Going Through Motions',text:'🌫️ Going Through Motions\npresent but not really here' },
+    { id:'s_fatigue',       icon:'🪫', label:'Compassion Fatigue',  text:'🪫 Compassion Fatigue\ngiving everything I have' },
+    { id:'s_numb2',         icon:'🧊', label:'Gone a Bit Numb',     text:'🧊 Gone a Bit Numb\nprotecting myself without realising' },
+    { id:'s_nowords2',      icon:'😶', label:'No Words',            text:'😶 No Words\ndon\'t know what to say to them' },
+    { id:'s_heavy',         icon:'⏳', label:'Time Feels Heavy',    text:'⏳ Time Feels Heavy\nevery day is weighing on me' },
+    { id:'s_surreal',       icon:'🫧', label:'Surreal',             text:'🫧 Surreal\nthis doesn\'t feel real yet' },
+    { id:'s_waves',         icon:'🌊', label:'Waves of It',         text:'🌊 Waves of It\nhits me when I least expect it' },
+    { id:'s_showing',       icon:'🕯️', label:'Just Showing Up',     text:'🕯️ Just Showing Up\nthat\'s all I can do right now' },
+    { id:'s_anchor',        icon:'🤝', label:'Being Their Anchor',  text:'🤝 Being Their Anchor\nstaying steady so they don\'t have to' },
+  ],
+  'Hospital': [
+    { id:'s_exam',          icon:'🩺', label:'Exam Anxiety',        text:'🩺 Exam Anxiety\nbeing looked at / touched' },
+    { id:'s_needle',        icon:'💉', label:'Needle Fear',         text:'💉 Needle Fear\ninjections or bloods' },
+    { id:'s_waitroom',      icon:'⏳', label:'Waiting Room Wait',   text:'⏳ Waiting Room Wait\nnot knowing how long' },
+    { id:'s_symptoms',      icon:'🗣️', label:'Explaining Symptoms', text:'🗣️ Explaining Symptoms\nhard to put into words' },
+    { id:'s_forms',         icon:'📋', label:'Too Much Paperwork',  text:'📋 Too Much Paperwork\nforms feel overwhelming' },
+    { id:'s_wardnoise',     icon:'🔊', label:'Ward Noise',          text:'🔊 Ward Noise\nbeeping, alarms, chatter' },
+    { id:'s_staff',         icon:'🥼', label:'Unfamiliar Staff',    text:'🥼 Unfamiliar Staff\nnew faces every time' },
+    { id:'s_smell',         icon:'😷', label:'Smell Sensitivity',   text:'😷 Smell Sensitivity\nclinical smells overwhelming' },
+    { id:'s_results',       icon:'❓', label:'Unclear Results',     text:'❓ Unclear Results\nconfused by what was said' },
+    { id:'s_overnight',     icon:'🛏️', label:'Overnight Stay Fear', text:'🛏️ Overnight Stay Fear\nunfamiliar surroundings' },
+  ],
+};
+
 const FEELING_CATEGORIES = {
   'How I feel': [
     { id: 'happy',       icon: '😊', label: 'Happy',       color: '#fbbf24', metaphor: 'like warm sunshine' },
@@ -3743,12 +3879,85 @@ function openIconPanel() {
   el.id = 'tw-icon-panel';
   el.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#17171f;border-radius:20px 20px 0 0;z-index:9981;font-family:"DM Sans",sans-serif;color:#e8e8f0;max-height:80vh;display:flex;flex-direction:column;';
 
+  const TOP_TABS = ['Icons', 'Stickers'];
+  let activeTop = 'Icons';
+
   const cats = Object.keys(FEELING_CATEGORIES);
   let activeCategory = cats[0];
   let selectedIcon = null;
   let selectedIntensity = 3; // default Very
 
+  const stickerCats = Object.keys(STICKER_CATEGORIES);
+  let activeStickerCat = stickerCats[0];
+  let selectedSticker = null;
+
   function renderPanel() {
+    const isStickersMode = activeTop === 'Stickers';
+
+    if (isStickersMode) {
+      const stickers = STICKER_CATEGORIES[activeStickerCat] || [];
+      el.innerHTML = `
+        <div style="width:36px;height:4px;background:#2a2a38;border-radius:2px;margin:12px auto 0;"></div>
+        <div style="padding:14px 18px 0;">
+          <div style="font-size:17px;font-weight:600;margin-bottom:12px;">Send an icon</div>
+          <div style="display:flex;gap:6px;margin-bottom:10px;">
+            ${TOP_TABS.map(t => `
+              <button class="ip-top" data-top="${t}"
+                style="padding:6px 18px;border-radius:999px;border:none;cursor:pointer;font-family:inherit;font-size:13px;font-weight:600;background:${activeTop===t?'var(--accent)':'#1e1e28'};color:${activeTop===t?'#fff':'#9090a8'};">
+                ${t}
+              </button>
+            `).join('')}
+          </div>
+          <div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:8px;scrollbar-width:none;">
+            ${stickerCats.map(c => `
+              <button class="ip-scat" data-scat="${c}"
+                style="padding:5px 13px;border-radius:999px;border:none;cursor:pointer;font-family:inherit;font-size:12px;font-weight:500;white-space:nowrap;background:${activeStickerCat===c?'rgba(124,106,247,0.25)':'#1e1e28'};color:${activeStickerCat===c?'#c4b9ff':'#9090a8'};border:1px solid ${activeStickerCat===c?'rgba(124,106,247,0.5)':'transparent'};">
+                ${c}
+              </button>
+            `).join('')}
+          </div>
+        </div>
+        <div style="flex:1;overflow-y:auto;padding:12px 18px;">
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px;">
+            ${stickers.map(s => `
+              <button class="ip-sticker" data-sid="${s.id}"
+                style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 6px;border-radius:14px;border:2px solid ${selectedSticker?.id===s.id?'var(--accent)':'transparent'};background:${selectedSticker?.id===s.id?'rgba(124,106,247,0.15)':'#1e1e28'};cursor:pointer;text-align:center;">
+                <span style="font-size:26px;line-height:1;">${s.icon}</span>
+                <span style="font-size:10px;color:#9090a8;line-height:1.2;">${s.label}</span>
+              </button>
+            `).join('')}
+          </div>
+        </div>
+        <div style="padding:14px 18px 32px;border-top:1px solid rgba(255,255,255,0.07);display:flex;gap:10px;">
+          <button id="ip-cancel" style="flex:1;padding:13px;border-radius:12px;border:none;background:#1e1e28;color:#e8e8f0;font-family:inherit;font-size:14px;cursor:pointer;">Cancel</button>
+          <button id="ip-send" ${!selectedSticker?'disabled':''} style="flex:2;padding:13px;border-radius:12px;border:none;background:${selectedSticker?'var(--accent)':'#1e1e28'};color:${selectedSticker?'#fff':'#5a5a72'};font-family:inherit;font-size:15px;font-weight:600;cursor:pointer;">
+            ${selectedSticker ? `Send ${selectedSticker.icon}` : 'Pick a sticker'}
+          </button>
+        </div>
+      `;
+      el.querySelectorAll('.ip-top').forEach(btn => {
+        btn.onclick = () => { activeTop = btn.dataset.top; selectedIcon = null; selectedSticker = null; renderPanel(); };
+      });
+      el.querySelectorAll('.ip-scat').forEach(btn => {
+        btn.onclick = () => { activeStickerCat = btn.dataset.scat; selectedSticker = null; renderPanel(); };
+      });
+      el.querySelectorAll('.ip-sticker').forEach(btn => {
+        btn.onclick = () => {
+          selectedSticker = STICKER_CATEGORIES[activeStickerCat].find(s => s.id === btn.dataset.sid);
+          renderPanel();
+        };
+      });
+      document.getElementById('ip-cancel').onclick = () => { el.remove(); bg.remove(); };
+      bg.onclick = () => { el.remove(); bg.remove(); };
+      document.getElementById('ip-send').onclick = async () => {
+        if (!selectedSticker) return;
+        el.remove(); bg.remove();
+        await sendIconMessage(selectedSticker.text, null);
+      };
+      return;
+    }
+
+    // ── Icons mode (original) ──
     const icons = [
       ...FEELING_CATEGORIES[activeCategory],
       ...(activeCategory === 'How I feel' ? customIcons : [])
@@ -3759,6 +3968,14 @@ function openIconPanel() {
       <div style="width:36px;height:4px;background:#2a2a38;border-radius:2px;margin:12px auto 0;"></div>
       <div style="padding:14px 18px 0;">
         <div style="font-size:17px;font-weight:600;margin-bottom:12px;">Send an icon</div>
+        <div style="display:flex;gap:6px;margin-bottom:10px;">
+          ${TOP_TABS.map(t => `
+            <button class="ip-top" data-top="${t}"
+              style="padding:6px 18px;border-radius:999px;border:none;cursor:pointer;font-family:inherit;font-size:13px;font-weight:600;background:${activeTop===t?'var(--accent)':'#1e1e28'};color:${activeTop===t?'#fff':'#9090a8'};">
+              ${t}
+            </button>
+          `).join('')}
+        </div>
         <div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:8px;scrollbar-width:none;">
           ${cats.map(c => `
             <button class="ip-cat ${activeCategory===c?'active':''}" data-cat="${c}"
@@ -3814,6 +4031,11 @@ function openIconPanel() {
         </button>
       </div>
     `;
+
+    // Bind top tabs
+    el.querySelectorAll('.ip-top').forEach(btn => {
+      btn.onclick = () => { activeTop = btn.dataset.top; selectedIcon = null; selectedSticker = null; renderPanel(); };
+    });
 
     // Bind category tabs
     el.querySelectorAll('.ip-cat').forEach(btn => {
@@ -4316,7 +4538,26 @@ if (!CONFIG_FILLED) {
       if (cachedUser && !navigator.onLine) {
         // Offline with cached user — load from cache without full auth
         currentUser = cachedUser;
+
+        // Restore last open convo so force-close doesn't reset navigation
+        sessionRestore();
+
+        // Load from localStorage cache immediately — works offline
         loadConversationsFromCache();
+
+        // Pre-load cached messages for the restored convo so UI shows instantly
+        if (activeConvoId) {
+          try {
+            const raw = localStorage.getItem('tw_msgs_' + activeConvoId);
+            if (raw) {
+              messages = JSON.parse(raw).map(m => ({
+                ...m,
+                createdAt: m.createdAt ? { toMillis: () => m.createdAt, toDate: () => new Date(m.createdAt) } : null
+              }));
+            }
+          } catch(e) {}
+        }
+
         render();
         return;
       }
