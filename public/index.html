@@ -2426,34 +2426,44 @@ async function sendMessage() {
   const convo = conversations.find(c => c.id === activeConvoId);
   const otherUid = convo?.participants.find(uid => uid !== currentUser.uid);
 
-  // ── Send path: attempt Firestore directly; queue only on hard failure ──
-  // navigator.onLine is unreliable in TWA/WebView — always try the write first.
-  try {
-    await addDoc(collection(db, 'conversations', activeConvoId, 'messages'), {
-      text,
-      senderId: currentUser.uid,
-      senderName: currentUser.displayName || currentUser.email,
-      createdAt: serverTimestamp(),
-      clientTimestamp: Date.now(),
-      read: false
-    });
-
-    await updateDoc(doc(db, 'conversations', activeConvoId), {
-      lastMessage: text.length > 100 ? text.slice(0, 100) + '\u2026' : text,
-      lastMessageAt: serverTimestamp(),
-      ...(otherUid ? { [`unreadCounts.${otherUid}`]: increment(1) } : {})
-    });
-    // Send via SMS if this convo has a linked number (or was auto-created from incoming SMS)
-    const linkedPhone = smsGetPhone(activeConvoId);
-    if (linkedPhone) {
-      const smsSent = await smsSend(linkedPhone, text);
-      if (!smsSent && isCapacitor()) {
-        showToast('⚠️ SMS not sent — check permissions');
-      }
+  // ── Send via SMS first — independent of internet connectivity. SMS only
+  // needs cell signal, so it must not wait on (or be blocked by) Firestore. ──
+  const linkedPhone = smsGetPhone(activeConvoId);
+  let smsSent = null;
+  if (linkedPhone) {
+    smsSent = await smsSend(linkedPhone, text);
+    if (!smsSent && isCapacitor()) {
+      showToast('⚠️ SMS not sent — check permissions');
     }
+  }
+
+  // ── Firestore write: race against a short timeout. An offline write never
+  // resolves or rejects on its own (it just sits pending until reconnect),
+  // so without a timeout this would hang the app instead of queuing. ──
+  try {
+    await Promise.race([
+      (async () => {
+        await addDoc(collection(db, 'conversations', activeConvoId, 'messages'), {
+          text,
+          senderId: currentUser.uid,
+          senderName: currentUser.displayName || currentUser.email,
+          createdAt: serverTimestamp(),
+          clientTimestamp: Date.now(),
+          read: false,
+          ...(smsSent ? { viaSms: true } : {})
+        });
+
+        await updateDoc(doc(db, 'conversations', activeConvoId), {
+          lastMessage: text.length > 100 ? text.slice(0, 100) + '\u2026' : text,
+          lastMessageAt: serverTimestamp(),
+          ...(otherUid ? { [`unreadCounts.${otherUid}`]: increment(1) } : {})
+        });
+      })(),
+      new Promise((_, reject) => setTimeout(() => reject(Object.assign(new Error('offline-timeout'), { code: 'offline-timeout' })), 4000))
+    ]);
   } catch(e) {
     console.log('SEND ERROR:', JSON.stringify({code: e.code, message: e.message, name: e.name}));
-    // Firestore write failed — queue it so it isn't lost
+    // Firestore write failed or timed out — queue it so it isn't lost
     const qid = Date.now() + '_' + Math.random().toString(36).slice(2);
     queueAdd({
       _qid: qid,
@@ -2464,7 +2474,9 @@ async function sendMessage() {
       queuedAt: Date.now()
     });
     renderPendingMessage(text, activeConvoId);
-    showToast(navigator.onLine ? '\u26a0\ufe0f Send failed — will retry' : '\U0001f4e8 Saved — will send when online');
+    showToast(smsSent
+      ? '\U0001f4e8 Sent via SMS \u2014 will sync to chat when online'
+      : (navigator.onLine ? '\u26a0\ufe0f Send failed — will retry' : '\U0001f4e8 Saved — will send when online'));
   }
 }
 
