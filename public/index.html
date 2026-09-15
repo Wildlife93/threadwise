@@ -1080,7 +1080,7 @@ function smsSetPhone(convoId, number) {
   } catch {}
 }
 function isCapacitor() {
-  return !!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Sms);
+  return !!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SmsPlugin);
 }
 
 // ── SMS debug log — persists across app restarts so real failures can be
@@ -1094,10 +1094,21 @@ function smsDebugLog(entry) {
 }
 async function smsSend(phoneNumber, message) {
   const capOk = isCapacitor();
-  smsDebugLog({ event: 'attempt', phone: phoneNumber, isCapacitor: capOk, online: navigator.onLine });
+  smsDebugLog({
+    event: 'attempt',
+    phone: phoneNumber,
+    isCapacitor: capOk,
+    online: navigator.onLine,
+    hasCapacitorGlobal: !!window.Capacitor,
+    hasPluginsObj: !!(window.Capacitor && window.Capacitor.Plugins),
+    pluginKeys: (window.Capacitor && window.Capacitor.Plugins) ? Object.keys(window.Capacitor.Plugins).join(',') : null,
+    platform: (window.Capacitor && window.Capacitor.getPlatform) ? window.Capacitor.getPlatform() : null,
+    isNative: (window.Capacitor && window.Capacitor.isNativePlatform) ? window.Capacitor.isNativePlatform() : null,
+    ua: navigator.userAgent.slice(0, 90)
+  });
   if (capOk) {
     try {
-      await window.Capacitor.Plugins.Sms.sendSms({ phoneNumber, message });
+      await window.Capacitor.Plugins.SmsPlugin.send({ phoneNumber, message });
       smsDebugLog({ event: 'success', phone: phoneNumber, online: navigator.onLine });
       return true;
     } catch(e) {
@@ -1137,7 +1148,9 @@ function openSmsDebugPanel() {
     const color = e.event === 'success' ? '#4ade80' : (e.event === 'error' || e.event === 'fallback-no-plugin' ? '#ff6b6b' : '#a3a3b8');
     const detail = e.event === 'error'
       ? `${e.message || ''}${e.code ? ' (' + e.code + ')' : ''}`
-      : (e.event === 'attempt' ? `isCapacitor=${e.isCapacitor} online=${e.online}` : `online=${e.online}`);
+      : (e.event === 'attempt'
+          ? `isCapacitor=${e.isCapacitor} online=${e.online}<br>hasCapacitorGlobal=${e.hasCapacitorGlobal} hasPluginsObj=${e.hasPluginsObj}<br>pluginKeys=${e.pluginKeys || '(none)'}<br>platform=${e.platform} isNative=${e.isNative}<br>ua=${e.ua || ''}`
+          : `online=${e.online}`);
     return `<div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.06);font-size:13px;">
       <div style="color:${color};font-weight:600;">${e.event}${e.phone ? ' \u2014 ' + e.phone : ''}</div>
       <div style="color:#5a5a72;font-size:11px;margin-top:2px;">${time}</div>
@@ -1176,7 +1189,7 @@ let _smsIsDefault = null;
 async function smsCheckDefault() {
   if (!isCapacitor()) return false;
   try {
-    const res = await window.Capacitor.Plugins.Sms.checkDefaultSmsApp();
+    const res = await window.Capacitor.Plugins.SmsPlugin.checkDefaultSmsApp();
     _smsIsDefault = res.isDefault;
     return res.isDefault;
   } catch(e) {
@@ -1188,7 +1201,7 @@ async function smsCheckDefault() {
 async function smsRequestDefault() {
   if (!isCapacitor()) return;
   try {
-    await window.Capacitor.Plugins.Sms.requestDefaultSmsApp();
+    await window.Capacitor.Plugins.SmsPlugin.requestDefaultSmsApp();
     // Re-check after user returns from the system dialog
     setTimeout(async () => {
       await smsCheckDefault();
@@ -1202,20 +1215,20 @@ async function smsMarkThreadRead(phoneNumber) {
   if (!isCapacitor() || !phoneNumber) return;
   try {
     // Find the matching thread from the system SMS DB by address
-    const { conversations: sysCons } = await window.Capacitor.Plugins.Sms.getConversations();
+    const { conversations: sysCons } = await window.Capacitor.Plugins.SmsPlugin.getConversations();
     const thread = sysCons?.find(t =>
       t.address && phoneNumber &&
       t.address.replace(/\D/g,'').endsWith(phoneNumber.replace(/\D/g,'').slice(-7))
     );
     if (thread?.threadId) {
-      await window.Capacitor.Plugins.Sms.markRead({ threadId: thread.threadId });
+      await window.Capacitor.Plugins.SmsPlugin.markRead({ threadId: thread.threadId });
     }
   } catch(e) { console.warn('smsMarkThreadRead failed:', e); }
 }
 
 // Listen for incoming SMS from SmsReceiver.java via notifyListeners
 if (window.Capacitor) {
-  window.Capacitor.addListener?.('Sms', 'smsReceived', handleIncomingSms);
+  window.Capacitor.addListener?.('SmsPlugin', 'smsReceived', handleIncomingSms);
 }
 // Also listen via window event (fallback bridge method)
 window.addEventListener('smsReceived', (e) => {
