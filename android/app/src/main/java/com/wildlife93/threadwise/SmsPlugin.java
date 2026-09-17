@@ -35,7 +35,6 @@ public class SmsPlugin extends Plugin {
         SmsReceiver.staticBridge = this.bridge;
     }
 
-
     @PluginMethod
     public void send(PluginCall call) {
         String phoneNumber = call.getString("phoneNumber");
@@ -58,17 +57,91 @@ public class SmsPlugin extends Plugin {
         }
     }
 
+    /**
+     * Sends the SMS and registers a real "sent" confirmation callback from the
+     * radio/modem via a broadcast receiver, instead of assuming success the
+     * instant Android accepts the request. Resolves/rejects only once the modem
+     * actually reports back (or after a safety timeout if it never does).
+     */
     private void doSend(PluginCall call, String phoneNumber, String message) {
         try {
             SmsManager smsManager = SmsManager.getDefault();
-            if (message.length() > 160) {
-                smsManager.sendMultipartTextMessage(phoneNumber, null, smsManager.divideMessage(message), null, null);
+            final java.util.ArrayList<String> parts = message.length() > 160
+                ? smsManager.divideMessage(message)
+                : new java.util.ArrayList<>(java.util.Collections.singletonList(message));
+            final int totalParts = parts.size();
+
+            final int[] remaining = { totalParts };
+            final boolean[] settled = { false };
+            final int[] failureCode = { Integer.MIN_VALUE };
+
+            final String action = "com.wildlife93.threadwise.SMS_SENT_"
+                + System.currentTimeMillis() + "_" + Math.abs(phoneNumber.hashCode());
+            android.content.IntentFilter filter = new android.content.IntentFilter(action);
+
+            final android.content.BroadcastReceiver[] receiverHolder = new android.content.BroadcastReceiver[1];
+            android.content.BroadcastReceiver receiver = new android.content.BroadcastReceiver() {
+                @Override
+                public void onReceive(android.content.Context context, Intent intent) {
+                    int rc = getResultCode();
+                    if (rc != android.app.Activity.RESULT_OK && failureCode[0] == Integer.MIN_VALUE) {
+                        failureCode[0] = rc;
+                    }
+                    remaining[0]--;
+                    if (remaining[0] <= 0 && !settled[0]) {
+                        settled[0] = true;
+                        try { getContext().unregisterReceiver(receiverHolder[0]); } catch (Exception ignored) {}
+                        if (failureCode[0] == Integer.MIN_VALUE) {
+                            JSObject result = new JSObject();
+                            result.put("success", true);
+                            call.resolve(result);
+                        } else {
+                            String reason;
+                            switch (failureCode[0]) {
+                                case SmsManager.RESULT_ERROR_NO_SERVICE:      reason = "No cell service"; break;
+                                case SmsManager.RESULT_ERROR_RADIO_OFF:       reason = "Radio off (airplane mode)"; break;
+                                case SmsManager.RESULT_ERROR_NULL_PDU:        reason = "Null PDU"; break;
+                                case SmsManager.RESULT_ERROR_LIMIT_EXCEEDED:  reason = "Send limit exceeded"; break;
+                                default: reason = "Generic failure (code " + failureCode[0] + ")";
+                            }
+                            call.reject("SMS send failed: " + reason);
+                        }
+                    }
+                }
+            };
+            receiverHolder[0] = receiver;
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                getContext().registerReceiver(receiver, filter, android.content.Context.RECEIVER_NOT_EXPORTED);
             } else {
-                smsManager.sendTextMessage(phoneNumber, null, message, null, null);
+                getContext().registerReceiver(receiver, filter);
             }
-            JSObject result = new JSObject();
-            result.put("success", true);
-            call.resolve(result);
+
+            int piFlags = android.app.PendingIntent.FLAG_UPDATE_CURRENT
+                | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ? android.app.PendingIntent.FLAG_MUTABLE : 0);
+
+            if (totalParts > 1) {
+                java.util.ArrayList<android.app.PendingIntent> sentIntents = new java.util.ArrayList<>();
+                for (int i = 0; i < totalParts; i++) {
+                    sentIntents.add(android.app.PendingIntent.getBroadcast(
+                        getContext(), i, new Intent(action), piFlags));
+                }
+                smsManager.sendMultipartTextMessage(phoneNumber, null, parts, sentIntents, null);
+            } else {
+                android.app.PendingIntent sentPI = android.app.PendingIntent.getBroadcast(
+                    getContext(), 0, new Intent(action), piFlags);
+                smsManager.sendTextMessage(phoneNumber, null, message, sentPI, null);
+            }
+
+            // Safety net: some OEMs occasionally never fire the callback. Don't hang forever.
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                if (!settled[0]) {
+                    settled[0] = true;
+                    try { getContext().unregisterReceiver(receiver); } catch (Exception ignored) {}
+                    call.reject("SMS send timed out waiting for radio confirmation");
+                }
+            }, 15000);
+
         } catch (Exception e) {
             call.reject("Failed to send SMS: " + e.getMessage());
         }
@@ -251,3 +324,4 @@ public class SmsPlugin extends Plugin {
         }
     }
 }
+
