@@ -124,12 +124,12 @@ public class SmsPlugin extends Plugin {
                 java.util.ArrayList<android.app.PendingIntent> sentIntents = new java.util.ArrayList<>();
                 for (int i = 0; i < totalParts; i++) {
                     sentIntents.add(android.app.PendingIntent.getBroadcast(
-                        getContext(), i, new Intent(action), piFlags));
+                        getContext(), i, new Intent(action).setPackage(getContext().getPackageName()), piFlags));
                 }
                 smsManager.sendMultipartTextMessage(phoneNumber, null, parts, sentIntents, null);
             } else {
                 android.app.PendingIntent sentPI = android.app.PendingIntent.getBroadcast(
-                    getContext(), 0, new Intent(action), piFlags);
+                    getContext(), 0, new Intent(action).setPackage(getContext().getPackageName()), piFlags);
                 smsManager.sendTextMessage(phoneNumber, null, message, sentPI, null);
             }
 
