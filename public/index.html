@@ -62,6 +62,7 @@
       --font-display: 'Playfair Display', serif;
       --safe-bottom: env(safe-area-inset-bottom, 0px);
       --safe-top: env(safe-area-inset-top, 0px);
+      --offline-banner-h: 0px;
     }
 
     html, body { height: 100%; overflow: hidden; background: var(--bg); }
@@ -94,7 +95,7 @@
     ::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 2px; }
 
     /* ── Layout ── */
-    .app { display: flex; height: 100vh; height: 100dvh; padding-top: var(--safe-top); overflow: hidden; }
+    .app { display: flex; height: 100vh; height: 100dvh; padding-top: calc(var(--safe-top) + var(--offline-banner-h)); overflow: hidden; transition: padding-top 0.2s ease; }
 
     /* ── Sidebar ── */
     .sidebar {
@@ -715,11 +716,11 @@
         overflow: hidden;
       }
       .sidebar {
-        position: absolute; inset: 0; right: auto;
+        position: absolute; top: var(--offline-banner-h); right: auto; bottom: 0; left: 0;
         width: 100%; min-width: unset;
         z-index: 10;
         transform: translateX(0);
-        transition: transform 0.3s cubic-bezier(.4,0,.2,1);
+        transition: transform 0.3s cubic-bezier(.4,0,.2,1), top 0.2s ease;
       }
       .sidebar.hidden { transform: translateX(-100%); }
       /* Chat view fills the app naturally — no fixed positioning needed in APK */
@@ -1085,6 +1086,7 @@ function isCapacitor() {
 
 // ── SMS debug log — persists across app restarts so real failures can be
 // read back later instead of relying on a toast that vanishes in 2 seconds. ──
+let _smsDebugPanelOpen = false;
 function smsDebugLog(entry) {
   try {
     const log = JSON.parse(localStorage.getItem('tw_sms_debug') || '[]');
@@ -1134,6 +1136,8 @@ async function smsSend(phoneNumber, message) {
 function openSmsDebugPanel() {
   document.getElementById('tw-sms-debug-panel')?.remove();
   document.querySelector('.tw-sms-debug-overlay')?.remove();
+  _smsDebugPanelOpen = true;
+  document.getElementById('tw-offline-banner')?.remove();
   let log = [];
   try { log = JSON.parse(localStorage.getItem('tw_sms_debug') || '[]'); } catch(e) {}
   const ov = document.createElement('div');
@@ -1168,7 +1172,11 @@ function openSmsDebugPanel() {
     </div>
   `;
   document.body.appendChild(panel);
-  const close = () => { panel.remove(); ov.remove(); };
+  const close = () => {
+    panel.remove(); ov.remove();
+    _smsDebugPanelOpen = false;
+    updateOnlineIndicator(navigator.onLine);
+  };
   ov.onclick = close;
   document.getElementById('tw-debug-close').onclick = close;
   document.getElementById('tw-debug-clear').onclick = () => {
@@ -1234,13 +1242,20 @@ if (window.Capacitor) {
 window.addEventListener('smsReceived', (e) => {
   try {
     const data = typeof e.detail === 'string' ? JSON.parse(e.detail) : e.detail;
+    smsDebugLog({ event: 'incoming-event-fired', phone: data?.sender, bodyPreview: (data?.body || '').slice(0, 30) });
     handleIncomingSms(data);
-  } catch(e) { console.warn('smsReceived parse error', e); }
+  } catch(err) {
+    smsDebugLog({ event: 'incoming-parse-error', message: err?.message || String(err) });
+    console.warn('smsReceived parse error', err);
+  }
 });
 async function handleIncomingSms(data) {
   const sender = data.sender || '';
   const body = data.body || '';
-  if (!sender || !body || !currentUser || !db) return;
+  if (!sender || !body || !currentUser || !db) {
+    smsDebugLog({ event: 'incoming-early-exit', phone: sender, hasCurrentUser: !!currentUser, hasDb: !!db, hasBody: !!body });
+    return;
+  }
 
   // Find an existing convo linked to this number
   let convoId = conversations.find(c => {
@@ -1262,7 +1277,13 @@ async function handleIncomingSms(data) {
       });
       convoId = convoRef.id;
       smsSetPhone(convoId, sender);
-    } catch(e) { console.warn('handleIncomingSms: could not create convo', e); return; }
+      smsDebugLog({ event: 'incoming-convo-created', phone: sender, convoId });
+    } catch(e) {
+      smsDebugLog({ event: 'incoming-convo-create-failed', phone: sender, message: e?.message || String(e) });
+      console.warn('handleIncomingSms: could not create convo', e); return;
+    }
+  } else {
+    smsDebugLog({ event: 'incoming-convo-matched', phone: sender, convoId });
   }
 
   addDoc(collection(db, 'conversations', convoId, 'messages'), {
@@ -1273,12 +1294,18 @@ async function handleIncomingSms(data) {
     clientTimestamp: Date.now(),
     read: false,
     viaSms: true
-  }).catch(() => {});
+  }).then(() => {
+    smsDebugLog({ event: 'incoming-message-saved', phone: sender, convoId });
+  }).catch((e) => {
+    smsDebugLog({ event: 'incoming-message-save-failed', phone: sender, convoId, message: e?.message || String(e) });
+  });
   updateDoc(doc(db, 'conversations', convoId), {
     lastMessage: body.length > 100 ? body.slice(0, 100) + '…' : body,
     lastMessageAt: serverTimestamp(),
     [`unreadCounts.${currentUser.uid}`]: increment(1)
-  }).catch(() => {});
+  }).catch((e) => {
+    smsDebugLog({ event: 'incoming-convo-update-failed', phone: sender, convoId, message: e?.message || String(e) });
+  });
 }
 
 // ── Init Firebase ─────────────────────────────────────────────────────────
@@ -4356,6 +4383,8 @@ async function openSummariseView(text) {
 // ── Online / Offline indicator ────────────────────────────────────────────
 function updateOnlineIndicator(isOnline) {
   document.getElementById('tw-offline-banner')?.remove();
+  document.documentElement.style.setProperty('--offline-banner-h', '0px');
+  if (_smsDebugPanelOpen) return;
   if (!isOnline) {
     const banner = document.createElement('div');
     banner.id = 'tw-offline-banner';
@@ -4365,6 +4394,7 @@ function updateOnlineIndicator(isOnline) {
       <span style="flex:1;">You're offline — messages will send when you reconnect</span>
     `;
     document.body.appendChild(banner);
+    document.documentElement.style.setProperty('--offline-banner-h', banner.offsetHeight + 'px');
   } else {
     // Show brief "syncing" banner then remove
     const banner = document.createElement('div');
@@ -4372,7 +4402,11 @@ function updateOnlineIndicator(isOnline) {
     banner.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#0d2a1f;border-bottom:1px solid rgba(52,211,153,0.3);padding:8px 16px;display:flex;align-items:center;gap:8px;z-index:7777;font-size:13px;color:#34d399;font-family:var(--font);';
     banner.innerHTML = `<span>🔄</span><span>Back online — syncing messages…</span>`;
     document.body.appendChild(banner);
-    setTimeout(() => banner.remove(), 3000);
+    document.documentElement.style.setProperty('--offline-banner-h', banner.offsetHeight + 'px');
+    setTimeout(() => {
+      banner.remove();
+      document.documentElement.style.setProperty('--offline-banner-h', '0px');
+    }, 3000);
   }
 }
 
